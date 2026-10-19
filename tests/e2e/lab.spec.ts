@@ -5,7 +5,7 @@ import { trackErrors } from "./helpers";
 test("recorded results load with counts and denominators, and export real records", async ({ page }) => {
   const errors = trackErrors(page);
   await page.goto("/lab");
-  const table = page.getByRole("table").filter({ hasText: "False-arrival rate" });
+  const table = page.getByRole("table").filter({ hasText: "Correct confirmation ↑" }).first();
   await expect(table).toBeVisible({ timeout: 60_000 });
   await expect(table.locator("tbody tr").first()).toContainText(/\d+\/\d+/);
   const [csv] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Export CSV" }).click()]);
@@ -17,9 +17,10 @@ test("recorded results load with counts and denominators, and export real record
   const data = JSON.parse(fs.readFileSync((await json.path())!, "utf8"));
   expect(data.schema).toBe("surestop.experiment/1");
   expect(data.runs.length).toBe(lines.length - 1);
-  // Inspecting a trial shows its decision trace.
+  // Inspecting a trial lazily loads and shows its full decision trace.
   await page.getByRole("button", { name: "Inspect" }).first().click();
-  await expect(page.getByRole("region", { name: "Trial decision trace" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Event history" })).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByRole("heading", { name: "Candidates and evidence" })).toBeVisible();
   expect(errors).toEqual([]);
 });
 
@@ -33,7 +34,7 @@ test("a live batch runs in the browser and is stored separately", async ({ page 
   await expect(page.getByRole("button", { name: /View browser runs \(1\)/ })).toBeVisible({ timeout: 600_000 });
   await page.getByRole("button", { name: /View browser runs/ }).click();
   await expect(page.getByRole("tab", { name: /Runs in this browser \(1\)/ })).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByRole("table").filter({ hasText: "False-arrival rate" }).locator("tbody tr")).toHaveCount(1);
+  await expect(page.getByRole("table").filter({ hasText: "Correct confirmation ↑" }).first().locator("tbody tr")).toHaveCount(1);
   page.once("dialog", (d) => d.accept());
   await page.getByRole("button", { name: "Clear browser runs" }).click();
   await expect(page.getByRole("tab", { name: /Runs in this browser \(0\)/ })).toBeVisible();

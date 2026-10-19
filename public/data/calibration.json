@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-10-19T15:50:22.177Z",
+ "generatedAt": "2026-10-19T16:48:47.043Z",
  "seeds": [
   101,
   102,
@@ -12,7 +12,7 @@
   109,
   110
  ],
- "rule": "For each baseline, choose the threshold τ with the highest completion rate over all six scenarios; ties go to the lower false-arrival rate, then to the lower τ.",
+ "rule": "For each baseline, choose the threshold τ with the highest completion rate over all calibration scenarios and seeds; ties go to the lower false-arrival rate, then to the lower τ.",
  "selected": {
   "single-frame": 0.9,
   "persistence": 0.8

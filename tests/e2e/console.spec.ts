@@ -36,6 +36,7 @@ test("reduced-motion preference disables robot animation", async ({ browser }) =
   const ctx = await browser.newContext({ reducedMotion: "reduce" });
   const page = await ctx.newPage();
   await page.goto("/console");
+  await page.waitForFunction(() => !!(window as unknown as { __surestopConsole?: unknown }).__surestopConsole);
   const reduced = await page.evaluate(() => (window as unknown as { __surestopConsole: { reducedMotion: boolean } }).__surestopConsole.reducedMotion);
   expect(reduced).toBe(true);
   await ctx.close();

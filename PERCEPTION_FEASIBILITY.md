@@ -108,8 +108,9 @@ example, a crate in front of a picture, or a wall corner.
 - WASM and WebGL produce the same scores (matching to ~1e-7).
 - On machines with a hardware GPU, WebGL is expected to be faster. I have not measured that
   here.
-- *Planned (not yet implemented at the time of this report):* the application picks WebGL
-  when a hardware GPU is reported and WASM otherwise, and records the backend in every run.
+- The application picks WebGL when a hardware GPU is reported and WASM otherwise
+  (`src/perception/backend.ts`, implemented after this report). It records the backend in
+  every run; all recorded experiments here used WASM.
 - The `lite_mobilenet_v2` weights are 17 MB, self-hosted, and loaded once.
 
 ## Decision: target and task definition

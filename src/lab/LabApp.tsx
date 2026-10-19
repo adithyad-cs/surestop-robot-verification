@@ -7,16 +7,45 @@ import { SCENARIOS } from "@/scenarios/layout";
 import { candidateMetrics, groupBy, METRIC_DEFINITIONS, missionMetrics, type Rate } from "@/eval/metrics";
 import { experimentToJson, trialsToCsv } from "@/eval/export";
 import type { RunRecord } from "@/experiments/engine";
+import type { MissionResult } from "@/mission/types";
 import { clearRuns, loadRuns, saveRun } from "@/lib/runStore";
 import { METHOD_LABELS, type MethodId } from "@/policies/types";
 import styles from "./LabApp.module.css";
+
+/** A run as listed in the Lab: full (browser runs, or fetched) or summary-only (recorded list). */
+interface LabRun {
+  variant: string;
+  score: RunRecord["score"];
+  result: Pick<MissionResult, "scenarioId" | "seed" | "method" | "outcome" | "reason" | "stats" | "confirmedTrackId"> & {
+    config: Pick<MissionResult["config"], "singleFrame" | "persistence">;
+  } & Partial<MissionResult>;
+}
 
 interface RecordedFile {
   schema: string;
   generatedAt: string;
   environment: Record<string, string>;
   protocol: Record<string, unknown>;
-  runs: RunRecord[];
+  fullDataset?: string;
+  runs: LabRun[];
+}
+
+const runKey = (r: LabRun) => `${r.result.scenarioId}|${r.result.seed}|${r.variant}`;
+
+let fullRecorded: Promise<Map<string, RunRecord>> | null = null;
+/** Fetches the full recorded dataset (frames, evidence, events) once, on demand. */
+function loadFullRecorded(url = "/data/eval-runs.json"): Promise<Map<string, RunRecord>> {
+  if (!fullRecorded) {
+    fullRecorded = fetch(url)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((d: { runs: RunRecord[] }) => new Map(d.runs.map((r) => [runKey(r), r])));
+    fullRecorded.catch(() => (fullRecorded = null));
+  }
+  return fullRecorded;
+}
+
+function isFull(r: LabRun): r is RunRecord {
+  return Array.isArray(r.result.tracks) && Array.isArray(r.result.events);
 }
 
 type Source = "recorded" | "local";
@@ -53,17 +82,18 @@ export default function LabApp() {
   const [source, setSource] = useState<Source>("recorded");
   const [scenario, setScenario] = useState<string>("all");
   const [selected, setSelected] = useState<number | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
-    fetch("/data/eval-runs.json")
+    fetch("/data/eval-summary.json")
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then((d: RecordedFile) => setRecorded(d))
       .catch((e) => setRecordedError(String(e)));
     void loadRuns().then(setLocal);
   }, []);
 
-  const runs = useMemo(() => {
-    const rs = source === "recorded" ? recorded?.runs ?? [] : local;
+  const runs = useMemo<LabRun[]>(() => {
+    const rs: LabRun[] = source === "recorded" ? recorded?.runs ?? [] : local;
     rememberThresholds(rs);
     return rs;
   }, [source, recorded, local]);
@@ -116,15 +146,51 @@ export default function LabApp() {
             </button>
             <button
               className="btn"
-              disabled={!filtered.length}
-              onClick={() => download(`surestop-runs-${source}-${scenario}.json`, experimentToJson(filtered, `${source} dataset, scenario filter: ${scenario}`), "application/json")}
+              disabled={!filtered.length || exporting}
+              onClick={async () => {
+                setExporting(true);
+                try {
+                  let full: RunRecord[];
+                  if (source === "recorded") {
+                    const all = await loadFullRecorded(recorded?.fullDataset);
+                    full = filtered.map((r) => all.get(runKey(r))).filter((r): r is RunRecord => !!r);
+                  } else full = filtered.filter(isFull);
+                  download(`surestop-runs-${source}-${scenario}.json`, experimentToJson(full, `${source} dataset, scenario filter: ${scenario}`), "application/json");
+                } catch (e) {
+                  window.alert(`Export failed: ${e instanceof Error ? e.message : String(e)}`);
+                } finally {
+                  setExporting(false);
+                }
+              }}
             >
-              Export JSON
+              {exporting ? "Preparing JSON…" : "Export JSON"}
             </button>
           </div>
         </div>
 
         {source === "recorded" && recorded && <Provenance file={recorded} />}
+        {source === "recorded" && recorded && (
+          <aside className={styles.reading} aria-label="How to read these results">
+            <h2>Reading these results</h2>
+            <ul>
+              <li>
+                On the six original scenarios, the single-frame baseline with a threshold tuned on calibration seeds also avoids false arrivals; there SureStop
+                differs mainly in cost (longer paths, more frames).
+              </li>
+              <li>
+                The false-arrival gap comes from the life-size photo board, a scenario we added after the first calibration run showed our original decoys scored
+                below the target. Its flat-surface evidence is independent of the detector score; its prevalence in real buildings is not something this
+                simulation can tell you.
+              </li>
+              <li>
+                The vase look-alike is not rejected by depth (it is volumetric). SureStop left it UNCONFIRMED because the detector did not label it consistently
+                from two distinct viewpoints; the one-view ablation shows what happens without that requirement. A consistently detected look-alike would be
+                confirmed.
+              </li>
+              <li>Simulation only, decoys designed by us, 20 held-out seeds per cell: preliminary.</li>
+            </ul>
+          </aside>
+        )}
         {source === "recorded" && !recorded && (
           <p className={styles.note}>{recordedError ? `Recorded dataset could not be loaded (${recordedError}).` : "Loading recorded runs…"}</p>
         )}
@@ -138,7 +204,7 @@ export default function LabApp() {
           <>
             <Summary runs={filtered} />
             <TrialTable runs={filtered} selected={selected} onSelect={setSelected} />
-            {selected !== null && filtered[selected] && <TrialDetail run={filtered[selected]} onClose={() => setSelected(null)} />}
+            {selected !== null && filtered[selected] && <TrialDetailLoader run={filtered[selected]} fullUrl={recorded?.fullDataset} onClose={() => setSelected(null)} />}
           </>
         )}
 
@@ -196,8 +262,8 @@ function RateCell({ r }: { r: Rate }) {
   );
 }
 
-function Summary({ runs }: { runs: RunRecord[] }) {
-  const byVariant = useMemo(() => [...groupBy(runs, (r) => r.variant).entries()].sort(([a], [b]) => a.localeCompare(b)), [runs]);
+function Summary({ runs }: { runs: LabRun[] }) {
+  const byVariant = useMemo(() => [...groupBy(runs, (r) => r.variant).entries()].sort(([a], [b]) => variantRank(a) - variantRank(b) || a.localeCompare(b)), [runs]);
   const rows = byVariant.map(([variant, rs]) => ({ variant, m: missionMetrics(rs.map((r) => r.score)), c: candidateMetrics(rs.map((r) => r.score)) }));
   const small = rows.some((r) => r.m.trials < 20);
   return (
@@ -289,6 +355,12 @@ function Summary({ runs }: { runs: RunRecord[] }) {
   );
 }
 
+const VARIANT_ORDER = ["single-frame", "persistence", "surestop-1view", "surestop"];
+function variantRank(v: string): number {
+  const i = VARIANT_ORDER.indexOf(v.split("@")[0]);
+  return i < 0 ? VARIANT_ORDER.length : i;
+}
+
 const thresholdOf = new Map<string, number>();
 
 /** Display name for a variant; baselines always show their threshold τ (from the run's recorded config). */
@@ -299,7 +371,7 @@ function labelFor(variant: string): string {
   return tau ? `${base} (τ=${tau})` : base;
 }
 
-function rememberThresholds(runs: RunRecord[]) {
+function rememberThresholds(runs: LabRun[]) {
   for (const r of runs) {
     const c = r.result.config;
     if (r.result.method === "single-frame") thresholdOf.set(r.variant, c.singleFrame.threshold);
@@ -310,8 +382,9 @@ function rememberThresholds(runs: RunRecord[]) {
 function IntervalPlot({ rows }: { rows: Array<{ label: string; far: Rate; comp: Rate }> }) {
   const rowH = 30;
   const left = 230;
-  const width = 760;
-  const plotW = width - left - 20;
+  const width = 860;
+  const labelCol = 100;
+  const plotW = width - left - labelCol - 16;
   const h = rows.length * rowH + 44;
   const x = (v: number) => left + v * plotW;
   return (
@@ -356,7 +429,7 @@ function IntervalPlot({ rows }: { rows: Array<{ label: string; far: Rate; comp: 
   );
 }
 
-function verdictOf(r: RunRecord): string {
+function verdictOf(r: LabRun): string {
   const s = r.score;
   if (s.correctArrival) return "correct arrival";
   if (s.falseArrival) return `FALSE ARRIVAL (${s.arrivedAtKind})`;
@@ -365,7 +438,7 @@ function verdictOf(r: RunRecord): string {
   return "target not reached";
 }
 
-function TrialTable({ runs, selected, onSelect }: { runs: RunRecord[]; selected: number | null; onSelect: (i: number | null) => void }) {
+function TrialTable({ runs, selected, onSelect }: { runs: LabRun[]; selected: number | null; onSelect: (i: number | null) => void }) {
   const [onlyFailures, setOnlyFailures] = useState(false);
   const idx = runs.map((r, i) => ({ r, i })).filter(({ r }) => !onlyFailures || !r.score.correctTerminal);
   return (
@@ -414,6 +487,34 @@ function TrialTable({ runs, selected, onSelect }: { runs: RunRecord[]; selected:
           </tbody>
         </table>
       </div>
+    </section>
+  );
+}
+
+function TrialDetailLoader({ run, fullUrl, onClose }: { run: LabRun; fullUrl?: string; onClose: () => void }) {
+  const [full, setFull] = useState<{ key: string; run: RunRecord } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const key = runKey(run);
+  useEffect(() => {
+    if (isFull(run)) return;
+    let live = true;
+    loadFullRecorded(fullUrl)
+      .then((m) => {
+        if (!live) return;
+        const r = m.get(key);
+        if (r) setFull({ key, run: r });
+        else setError("This trial is not in the full dataset.");
+      })
+      .catch((e) => live && setError(String(e)));
+    return () => {
+      live = false;
+    };
+  }, [run, key, fullUrl]);
+  const resolved = isFull(run) ? run : full?.key === key ? full.run : null;
+  if (resolved) return <TrialDetail run={resolved} onClose={onClose} />;
+  return (
+    <section className={styles.detail} aria-label="Trial decision trace" role="status">
+      <p className={styles.note}>{error ?? "Loading the full recorded trace (frames, evidence, events)…"}</p>
     </section>
   );
 }

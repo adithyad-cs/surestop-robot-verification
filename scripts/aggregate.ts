@@ -15,7 +15,7 @@ interface BatchFile {
 }
 
 export const SELECTION_RULE =
-  "For each baseline, choose the threshold τ with the highest completion rate over all six scenarios; ties go to the lower false-arrival rate, then to the lower τ.";
+  "For each baseline, choose the threshold τ with the highest completion rate over all calibration scenarios and seeds; ties go to the lower false-arrival rate, then to the lower τ.";
 
 const [mode, input, output] = process.argv.slice(2);
 if (!mode || !input || !output) {
@@ -70,6 +70,28 @@ if (mode === "calibration") {
     runs: batch.runs,
   };
   fs.writeFileSync(output, JSON.stringify(out));
+  // Compact companion loaded by the Lab first; full runs are fetched on demand.
+  const summaryPath = output.replace(/eval-runs\.json$/, "eval-summary.json");
+  const summary = {
+    ...out,
+    schema: "surestop.recorded-summary/1",
+    fullDataset: "/data/eval-runs.json",
+    runs: batch.runs.map((r) => ({
+      variant: r.variant,
+      score: r.score,
+      result: {
+        scenarioId: r.result.scenarioId,
+        seed: r.result.seed,
+        method: r.result.method,
+        outcome: r.result.outcome,
+        reason: r.result.reason,
+        confirmedTrackId: r.result.confirmedTrackId,
+        stats: r.result.stats,
+        config: { singleFrame: r.result.config.singleFrame, persistence: r.result.config.persistence },
+      },
+    })),
+  };
+  if (summaryPath !== output) fs.writeFileSync(summaryPath, JSON.stringify(summary));
   const byV = groupBy(batch.runs, (r) => r.variant);
   for (const [v, rs] of byV) {
     const m = missionMetrics(rs.map((r) => r.score));

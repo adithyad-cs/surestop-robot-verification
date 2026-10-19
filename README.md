@@ -43,11 +43,46 @@ Robot* track (Team Nexora4).
 - **Known limitation:** a 3-D vase of flowers is also called "potted plant", and depth cannot
   reject it. The `lookalike-3d` scenario shows this failure on purpose.
 
-## Results
+## Results (preliminary, simulation)
 
-The recorded comparison on held-out seeds is shown in the **Verification Lab** (`/lab`). It is
-computed in the browser from `public/data/eval-runs.json`. Headline numbers and their caveats
-are summarised in [`docs/RESULTS.md`](docs/RESULTS.md).
+**Data.** 560 recorded missions on held-out seeds 1001–1020: 7 scenarios × 4 methods × 20 seeds.
+Every mission used real rendering and real COCO-SSD inference. Ground truth was used only by the
+evaluator.
+
+**Threshold selection.** Baseline thresholds were chosen beforehand on calibration seeds 101–110,
+using a fixed rule. The full tables are generated from the data in
+[`docs/RESULTS.md`](docs/RESULTS.md), and the **Verification Lab** (`/lab`) recomputes them in the
+browser.
+
+| Method | False-arrival rate (all 7) | Completion (all 7) | False-arrival rate (original 6) | Completion (original 6) | Mean path (all 7) |
+|---|---|---|---|---|---|
+| Single-frame, τ = 0.9 (tuned) | 19% (16/85) | 86% (121/140) | **0% (0/65)** | 98% (117/120) | 23.7 m |
+| Persistence, τ = 0.8 (tuned) | 39% (33/85) | 59% (83/140) | 42% (27/65) | 58% (70/120) | 21.7 m |
+| SureStop, one-view ablation | 8% (7/85) | 95% (133/140) | 11% (7/65) | 94% (113/120) | 28.8 m |
+| SureStop | **0% (0/85)** | **100% (140/140)** | **0% (0/65)** | 100% (120/120) | 36.2 m |
+
+What this does and does not show:
+- **Original six scenarios.** The tuned single-frame threshold also had no false arrivals. Our
+  prints and displays score below the real plant (≤ 0.77 against 0.90–0.99), so a threshold
+  separates them. Here SureStop's measurable differences are 3 extra completions (occluded
+  target) and a cost of about 39 % more path on those six (36.1 m against 25.9 m).
+- **Where false arrivals differ.** The gap comes from `photo-board-decoy`, a free-standing
+  life-size photo that the detector scores 0.96–0.99. On that scenario single-frame falsely
+  arrives in 16/20 trials and SureStop in 0/20.
+  - We added this scenario *after* the first calibration run exposed the score gap (see
+    `/method`).
+  - It shows the mechanism, which is that flat-surface evidence does not depend on the
+    detector score. It does not show how common such decoys are.
+- **The vase look-alike was not rejected by depth.** It is volumetric. The vase became a
+  candidate in 18 of 20 trials, and all 18 ended UNCONFIRMED, because the detector did not label the vase "potted plant" consistently
+  from two distinct viewpoints. The one-view ablation falsely arrived 7/20. A look-alike that
+  is detected consistently would be confirmed.
+- **Abstention never occurred on held-out seeds.** The UNCONFIRMED path is exercised in unit
+  tests and appeared in calibration v1.
+- **Caveats.**
+  - These are our scenarios and our decoys, in simulation, with 20 trials per cell.
+  - SureStop was debugged on the calibration seeds of these scenarios.
+  - Our persistence baseline may be weaker than other persistence designs.
 
 ## Run locally
 
