@@ -32,7 +32,10 @@ export interface PlannerConfig {
 }
 
 export const DEFAULT_PLANNER: PlannerConfig = {
-  ranges: [1.6, 2.0],
+  // Far enough that a ~1 m object is not cut off by the bottom of the 50° view (camera 1.0 m
+  // high, pitched −10°: the lowest ray meets the floor 1.43 m ahead); near enough for depth
+  // noise below the 30 mm evidence gate. Both rings lie in range bin r2 (1.5–2.25 m).
+  ranges: [1.9, 2.2],
   bearingStepDeg: 30,
   ownFootprint: 0.8,
   saturatingChangeDeg: 75,

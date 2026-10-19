@@ -19,6 +19,11 @@ export interface SureStopConfig {
   requiredSupport: number;
   /** Distinct viewpoint cells with FLAT evidence needed to reject. */
   requiredAgainst: number;
+  /**
+   * Distinct viewpoint cells from which the candidate was looked for but not re-detected that
+   * reject it as a non-reproducible detection (only when there is no volumetric support).
+   */
+  requiredMisses: number;
   /** Maximum number of planned verification viewpoints per candidate. */
   maxViewpoints: number;
   /** At least one supporting view must be within this range (m) of the candidate. */
@@ -30,12 +35,15 @@ export const DEFAULT_SURESTOP: SureStopConfig = {
   cell: DEFAULT_CELL,
   requiredSupport: 2,
   requiredAgainst: 2,
+  requiredMisses: 3,
   maxViewpoints: 4,
-  confirmRange: 2.2,
+  confirmRange: 2.5,
 };
 
 interface CellVote {
   verdict: ViewVerdict;
+  /** The robot looked for the candidate from this cell and the detector did not report it. */
+  miss: boolean;
   noise: number;
   frameId: number;
   range: number;
@@ -61,7 +69,7 @@ export class SureStopVerifier {
     readonly config: SureStopConfig = DEFAULT_SURESTOP,
     private candidate: { x: number; z: number },
   ) {
-    if (config.requiredSupport < 1 || config.requiredAgainst < 1 || config.maxViewpoints < 1) {
+    if (config.requiredSupport < 1 || config.requiredAgainst < 1 || config.requiredMisses < 1 || config.maxViewpoints < 1) {
       throw new Error("invalid SureStop configuration");
     }
   }
@@ -99,7 +107,7 @@ export class SureStopVerifier {
     }
     const prev = this.votes.get(cell.key);
     const noise = obs.depth?.expectedNoise ?? Infinity;
-    const vote: CellVote = { verdict: a.verdict, noise, frameId: obs.frameId, range: cell.range, bearingDeg: cell.bearingDeg };
+    const vote: CellVote = { verdict: a.verdict, miss: !obs.detection, noise, frameId: obs.frameId, range: cell.range, bearingDeg: cell.bearingDeg };
     if (!prev) {
       this.votes.set(cell.key, vote);
       rec.counted = true;
@@ -151,19 +159,21 @@ export class SureStopVerifier {
   private tally() {
     let support = 0;
     let against = 0;
+    let misses = 0;
     let minSupportRange = Infinity;
     for (const v of this.votes.values()) {
       if (v.verdict === "VOLUMETRIC") {
         support++;
         minSupportRange = Math.min(minSupportRange, v.range);
       } else if (v.verdict === "FLAT") against++;
+      else if (v.miss) misses++;
     }
-    return { support, against, minSupportRange };
+    return { support, against, misses, minSupportRange };
   }
 
   private evaluate(): void {
     if (this.status !== "PENDING") return;
-    const { support, against, minSupportRange } = this.tally();
+    const { support, against, misses, minSupportRange } = this.tally();
     const c = this.config;
     if (support >= c.requiredSupport && against === 0) {
       if (minSupportRange <= c.confirmRange) {
@@ -179,8 +189,13 @@ export class SureStopVerifier {
       this.reason = `flat-surface evidence from ${plural(against, "distinct viewpoint")}, no volumetric evidence (picture-like candidate)`;
       return;
     }
+    if (misses >= c.requiredMisses && support === 0) {
+      this.status = "REJECTED";
+      this.reason = `not re-detected from ${plural(misses, "distinct viewpoint")} with line of sight, no volumetric evidence (detection not reproducible)`;
+      return;
+    }
     if (support > 0 && against > 0) this.reason = `conflicting evidence: ${support} volumetric vs ${against} flat views`;
-    else this.reason = `insufficient evidence: ${support} volumetric, ${against} flat of ${this.votes.size} distinct views`;
+    else this.reason = `insufficient evidence: ${support} volumetric, ${against} flat, ${misses} not re-detected of ${this.votes.size} distinct views`;
   }
 
   /** Ends verification without a decision (budget spent, no reachable viewpoint, timeout). */

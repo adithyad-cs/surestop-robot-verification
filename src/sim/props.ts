@@ -217,3 +217,30 @@ export function buildBox(w: number, h: number, d: number, color = 0x8a7a66): THR
   m.castShadow = m.receiveShadow = true;
   return physical(m);
 }
+
+/**
+ * A free-standing foam board (photo board) printed edge-to-edge with a picture, standing on the
+ * floor on a small rear easel. The printed face is a single flat plane.
+ */
+export function buildPhotoBoard(picture: THREE.Texture, widthM: number, heightM: number): THREE.Group {
+  const g = new THREE.Group();
+  g.name = "photo-board";
+  const thick = 0.012;
+  const edge = new THREE.MeshStandardMaterial({ color: 0xf2f0ea, roughness: 0.8 });
+  const board = new THREE.Mesh(new THREE.BoxGeometry(widthM, heightM, thick), edge);
+  board.position.set(0, heightM / 2, 0);
+  board.castShadow = board.receiveShadow = true;
+  g.add(board);
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(widthM, heightM), new THREE.MeshStandardMaterial({ map: picture, roughness: 0.6 }));
+  face.position.set(0, heightM / 2, thick / 2 + 0.0005);
+  g.add(face);
+  const legMat = new THREE.MeshStandardMaterial({ color: 0x3b3833, roughness: 0.6 });
+  for (const x of [-widthM * 0.35, widthM * 0.35]) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.03, heightM * 0.7, 0.03), legMat);
+    leg.position.set(x, heightM * 0.33, -0.16);
+    leg.rotation.x = 0.42;
+    leg.castShadow = true;
+    g.add(leg);
+  }
+  return physical(g);
+}

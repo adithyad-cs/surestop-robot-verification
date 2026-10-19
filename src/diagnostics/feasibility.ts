@@ -5,15 +5,16 @@
 import * as THREE from "three";
 import { ASSETS, type AssetSpec } from "@/sim/assets";
 import { loadAsset } from "@/sim/loadAsset";
-import { addLighting, buildBox, buildPoster, buildRoomShell, buildScreen } from "@/sim/props";
-import { studioPicture } from "@/sim/pictures";
+import { addLighting, buildBox, buildPhotoBoard, buildPoster, buildRoomShell, buildScreen } from "@/sim/props";
+import { inContextPicture, studioPicture } from "@/sim/pictures";
+import { getFloorTexture, getWallTexture } from "@/sim/textures";
 import { SensorRenderer, makeRobotCamera, ROBOT_CAMERA } from "@/sim/sensorRenderer";
 import { CocoSsdDetector, type CocoBase, type TfBackend } from "@/perception/cocoSsd";
 import type { Detection } from "@/perception/types";
 import { applyDepthNoise, extractDepthFeatures, intrinsicsFromFov, type DepthFeatures } from "@/sensing/depthFeatures";
 import { mulberry32 } from "@/lib/rng";
 
-export type CaseKind = "object" | "poster" | "screen" | "poster-occluded" | "occluded" | "truncated" | "dim" | "empty";
+export type CaseKind = "object" | "poster" | "screen" | "poster-occluded" | "photoboard" | "occluded" | "truncated" | "dim" | "empty";
 
 export interface FeasCase {
   id: string;
@@ -97,6 +98,11 @@ export function buildCases(assetIds: string[], decoyAssetIds: string[]): FeasCas
         for (const az of [0, 90]) {
           cases.push({ id: `${a}-occ-d${d}-l${lat}-az${az}`, kind: "occluded", assetId: a, distance: d, angleDeg: az, extra: lat });
         }
+      }
+    }
+    for (const d of [1.2, 2.0, 3.0]) {
+      for (const ang of [0, 30, 60]) {
+        cases.push({ id: `${a}-photoboard-d${d}-a${ang}`, kind: "photoboard", assetId: a, distance: d, angleDeg: ang });
       }
     }
     for (const d of [1.5, 2.2]) {
@@ -232,10 +238,12 @@ export async function runFeasibility(opts: RunOptions): Promise<FeasReport> {
   const lights = addLighting(scene);
   const cam = makeRobotCamera();
   const pictures = new Map<string, THREE.Texture>();
+  const boards = new Map<string, THREE.Texture>();
   for (const id of opts.decoyAssetIds) {
     const spec = ASSETS[id];
     const [pw, ph] = posterSize(spec);
     pictures.set(id, await studioPicture(sensor, spec, pw / ph));
+    boards.set(id, await inContextPicture(sensor, spec, 0.75, getFloorTexture(), getWallTexture()));
   }
 
   const cases = buildCases(opts.assetIds, opts.decoyAssetIds).filter((c) => !opts.only?.length || opts.only.includes(c.id));
@@ -281,6 +289,13 @@ export async function runFeasibility(opts: RunOptions): Promise<FeasReport> {
         occ.position.set(c.extra ?? 0, 0.525, -ROOM.depth / 2 + 0.55);
         dyn.add(occ);
       }
+    } else if (c.kind === "photoboard" && spec) {
+      const bh = spec.height / 0.8;
+      const board = buildPhotoBoard(boards.get(spec.id)!, bh * 0.75, bh);
+      dyn.add(board);
+      gtObj = board.children[1];
+      camPos.set(Math.sin(az) * c.distance, CAM_H, Math.cos(az) * c.distance);
+      lookAt.set(0, 0, 0);
     } else if (c.kind === "screen" && spec) {
       const [pw, ph] = posterSize(spec);
       const sh = 0.62;
@@ -326,7 +341,7 @@ export async function runFeasibility(opts: RunOptions): Promise<FeasReport> {
     latencies.push(inferenceMs);
 
     const gtBox = gtObj ? projectBox(gtObj, cam) : null;
-    const gtClass = spec ? (c.kind === "poster" || c.kind === "screen" || c.kind === "poster-occluded" ? null : spec.groundTruthClass) : null;
+    const gtClass = spec ? (c.kind === "poster" || c.kind === "screen" || c.kind === "poster-occluded" || c.kind === "photoboard" ? null : spec.groundTruthClass) : null;
     const depictedClass = spec?.groundTruthClass ?? null;
     let match: FeasRecord["match"] = null;
     let depictedBest = 0;
@@ -394,7 +409,7 @@ export async function runFeasibility(opts: RunOptions): Promise<FeasReport> {
     const key = `${r.assetId}|${r.kind}`;
     const cls = ASSETS[r.assetId].groundTruthClass;
     const row = summaryMap.get(key) ?? { assetId: r.assetId, kind: r.kind, cls, n: 0, hit50: 0, hit30: 0, meanBest: 0, sum: 0 };
-    const s = r.kind === "poster" || r.kind === "screen" || r.kind === "poster-occluded" ? bestOnGt(r) : r.match?.score ?? 0;
+    const s = r.kind === "poster" || r.kind === "screen" || r.kind === "poster-occluded" || r.kind === "photoboard" ? bestOnGt(r) : r.match?.score ?? 0;
     row.n++;
     if (s >= 0.5) row.hit50++;
     if (s >= 0.3) row.hit30++;

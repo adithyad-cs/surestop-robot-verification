@@ -140,6 +140,26 @@ describe("SureStopVerifier", () => {
     expect(v.decision().support).toBe(1);
   });
 
+  it("rejects a detection that cannot be reproduced from distinct viewpoints", () => {
+    const v = new SureStopVerifier(DEFAULT_SURESTOP, origin);
+    v.observe(obs(...at(3.5, 0), { depth: { expectedNoise: 0.05 } }));
+    v.observe(obs(...at(2.0, 45), { score: null }));
+    v.observe(obs(...at(2.0, 105), { score: null }));
+    expect(v.decision().status).toBe("PENDING");
+    v.observe(obs(...at(2.0, 165), { score: null }));
+    expect(v.decision().status).toBe("REJECTED");
+    expect(v.decision().reason).toMatch(/not re-detected from 3 distinct viewpoints/);
+  });
+
+  it("does not reject on misses when there is volumetric support", () => {
+    const v = new SureStopVerifier(DEFAULT_SURESTOP, origin);
+    v.observe(obs(...at(2.0, 15), { depth: volumetric }));
+    for (const b of [75, 135, 195]) v.observe(obs(...at(2.0, b), { score: null }));
+    expect(v.decision().status).toBe("PENDING");
+    v.exhaust("budget");
+    expect(v.decision().status).toBe("UNCONFIRMED");
+  });
+
   it("validates configuration and positions", () => {
     expect(() => new SureStopVerifier({ ...DEFAULT_SURESTOP, requiredSupport: 0 }, origin)).toThrow();
     const v = new SureStopVerifier(DEFAULT_SURESTOP, origin);

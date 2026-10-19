@@ -4,8 +4,9 @@
 import * as THREE from "three";
 import { ASSETS } from "./assets";
 import { loadAsset } from "./loadAsset";
-import { buildBox, buildPoster, buildScreen } from "./props";
-import { studioPicture } from "./pictures";
+import { buildBox, buildPhotoBoard, buildPoster, buildScreen } from "./props";
+import { studioPicture, inContextPicture } from "./pictures";
+import { getFloorTexture, getWallTexture } from "./textures";
 import type { SensorRenderer } from "./sensorRenderer";
 import { OccupancyGrid, type Rect } from "@/nav/grid";
 import { BOUNDS, WALLS, WALL_HEIGHT, type PlacedObject, type ScenarioInstance } from "@/scenarios/layout";
@@ -23,6 +24,17 @@ export interface BuiltWorld {
 }
 
 const pictureCache = new Map<string, Promise<THREE.Texture>>();
+const boardCache = new Map<string, Promise<THREE.Texture>>();
+
+function boardPictureOf(assetId: string, sensor: SensorRenderer, aspect: number): Promise<THREE.Texture> {
+  const key = `${assetId}:${aspect.toFixed(3)}`;
+  let p = boardCache.get(key);
+  if (!p) {
+    p = inContextPicture(sensor, ASSETS[assetId], aspect, getFloorTexture(), getWallTexture());
+    boardCache.set(key, p);
+  }
+  return p;
+}
 
 function pictureOf(assetId: string, sensor: SensorRenderer, aspect: number): Promise<THREE.Texture> {
   const key = `${assetId}:${aspect.toFixed(3)}`;
@@ -32,71 +44,6 @@ function pictureOf(assetId: string, sensor: SensorRenderer, aspect: number): Pro
     pictureCache.set(key, p);
   }
   return p;
-}
-
-let floorTexture: THREE.Texture | null = null;
-let wallTexture: THREE.Texture | null = null;
-
-function makeTexture(w: number, h: number, draw: (ctx: CanvasRenderingContext2D) => void): THREE.CanvasTexture {
-  const c = document.createElement("canvas");
-  c.width = w;
-  c.height = h;
-  draw(c.getContext("2d")!);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.anisotropy = 4;
-  return t;
-}
-
-function lcg(seed: number) {
-  let s = seed >>> 0;
-  return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 0x100000000);
-}
-
-function getFloorTexture(): THREE.Texture {
-  if (floorTexture) return floorTexture;
-  floorTexture = makeTexture(512, 512, (ctx) => {
-    const r = lcg(7);
-    for (let y = 0; y < 512; y += 64) {
-      let x = -Math.floor(r() * 256);
-      while (x < 512) {
-        const len = 180 + r() * 200;
-        const tone = 150 + Math.floor(r() * 30);
-        ctx.fillStyle = `rgb(${tone + 25},${tone - 5},${tone - 45})`;
-        ctx.fillRect(x, y, len, 64);
-        for (let g = 0; g < 14; g++) {
-          ctx.strokeStyle = `rgba(90,60,30,${0.05 + r() * 0.08})`;
-          ctx.beginPath();
-          const gy = y + r() * 64;
-          ctx.moveTo(x, gy);
-          ctx.bezierCurveTo(x + len / 3, gy + r() * 6 - 3, x + (2 * len) / 3, gy + r() * 6 - 3, x + len, gy);
-          ctx.stroke();
-        }
-        ctx.fillStyle = "rgba(60,40,20,0.55)";
-        ctx.fillRect(x, y, 2, 64);
-        x += len;
-      }
-      ctx.fillStyle = "rgba(60,40,20,0.6)";
-      ctx.fillRect(0, y, 512, 2);
-    }
-  });
-  return floorTexture;
-}
-
-function getWallTexture(): THREE.Texture {
-  if (wallTexture) return wallTexture;
-  wallTexture = makeTexture(256, 256, (ctx) => {
-    const r = lcg(11);
-    ctx.fillStyle = "rgb(226,222,214)";
-    ctx.fillRect(0, 0, 256, 256);
-    for (let i = 0; i < 2500; i++) {
-      const v = Math.floor(r() * 18) - 9;
-      ctx.fillStyle = `rgba(${200 + v},${196 + v},${188 + v},0.25)`;
-      ctx.fillRect(r() * 256, r() * 256, 2, 2);
-    }
-  });
-  return wallTexture;
 }
 
 function buildShell(scene: THREE.Scene) {
@@ -154,6 +101,8 @@ async function buildObject(o: PlacedObject, sensor: SensorRenderer): Promise<THR
     obj = await loadAsset(ASSETS[m.assetId]);
   } else if (m.type === "poster") {
     obj = buildPoster(await pictureOf(m.ofAsset, sensor, m.width / m.height), m.width, m.height);
+  } else if (m.type === "board") {
+    obj = buildPhotoBoard(await boardPictureOf(m.ofAsset, sensor, m.width / m.height), m.width, m.height);
   } else if (m.type === "screen") {
     obj = buildScreen(await pictureOf(m.ofAsset, sensor, 0.75), 0.47, 0.62);
   } else {

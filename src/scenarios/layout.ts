@@ -25,6 +25,7 @@ export type ModelRef =
   | { type: "asset"; assetId: string }
   | { type: "poster"; ofAsset: string; width: number; height: number }
   | { type: "screen"; ofAsset: string }
+  | { type: "board"; ofAsset: string; width: number; height: number }
   | { type: "box"; w: number; h: number; d: number; color: number };
 
 export interface PlacedObject {
@@ -164,6 +165,27 @@ export const SCENARIOS: ScenarioDef[] = [
         { id: "crate-occ", kind: "obstacle", label: "crate", model: { type: "box", w: 0.9, h: 0.8, d: 0.5, color: 0x7d8a96 }, x: px - 0.85, z: pz - 0.2, yaw: 90 * deg },
       ];
     },
+  },
+  {
+    id: "photo-board-decoy",
+    title: "Life-size photo board first",
+    summary:
+      "A free-standing board printed with a life-size photo of the plant (detector scores as high as the real plant) stands in the west room before the real plant. Added after calibration v1; see Method.",
+    targetPresent: true,
+    difficulty: "decoy",
+    objects: (rng) => [
+      ...furniture(rng),
+      {
+        id: "board-w",
+        kind: "picture-decoy",
+        label: "life-size photo board of a potted plant",
+        model: { type: "board", ofAsset: "plant", width: 0.89, height: 1.19 },
+        x: -3.7 + uniform(rng, -0.3, 0.3),
+        z: -4.0 + uniform(rng, -0.15, 0.15),
+        yaw: uniform(rng, -20, 20) * deg,
+      },
+      plantAt("plant", 4.9 + uniform(rng, -0.3, 0.3), -3.4 + uniform(rng, -0.3, 0.3), rng),
+    ],
   },
   {
     id: "lookalike-3d",

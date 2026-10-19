@@ -53,6 +53,7 @@ export class SceneView {
   private readonly gtGroup = new THREE.Group();
   private readonly env: THREE.Texture;
   private raf = 0;
+  private userMoved = false;
   private disposed = false;
   private readonly resizeObs: ResizeObserver;
 
@@ -86,6 +87,7 @@ export class SceneView {
     this.controls.minDistance = 4;
     this.controls.maxDistance = 30;
     this.controls.update();
+    this.controls.addEventListener("start", () => (this.userMoved = true));
 
     this.robot = overlay(buildRobot());
     this.fov = overlay(buildFovWedge());
@@ -217,6 +219,18 @@ export class SceneView {
     this.labels.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+    if (!this.userMoved) this.fitOverview();
+  }
+
+  /** Default view: distance chosen so the whole 14 m floor fits the current aspect ratio. */
+  private fitOverview() {
+    const dir = new THREE.Vector3(0, 13.5, 10.5).normalize();
+    const vHalf = (this.camera.fov * Math.PI) / 360;
+    const hHalf = Math.atan(Math.tan(vHalf) * this.camera.aspect);
+    const dist = Math.max(17.1, (7.6 / Math.tan(hHalf)) * 1.05, (5.6 / Math.tan(vHalf)) * 1.2);
+    this.camera.position.copy(dir.multiplyScalar(dist));
+    this.controls.target.set(0, 0, 0);
+    this.controls.update();
   }
 
   private render() {
