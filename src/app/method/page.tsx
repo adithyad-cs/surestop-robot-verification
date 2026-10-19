@@ -29,6 +29,7 @@ export default function MethodPage() {
           <a href="#verify">Verification policy</a>
           <a href="#baselines">Baselines</a>
           <a href="#protocol">Protocol &amp; metrics</a>
+          <a href="#changes">Post-calibration changes</a>
           <a href="#sensing">Sensing model</a>
           <a href="#prior">Prior work</a>
           <a href="#limits">Limitations</a>
@@ -150,7 +151,8 @@ export default function MethodPage() {
                 <b>CONFIRMED</b> when ≥ {s.requiredSupport} distinct cells are VOLUMETRIC, none is FLAT, and one supporting view is within {s.confirmRange} m.
               </li>
               <li>
-                <b>REJECTED</b> when ≥ {s.requiredAgainst} distinct cells are FLAT and none is VOLUMETRIC.
+                <b>REJECTED</b> when ≥ {s.requiredAgainst} distinct cells are FLAT and none is VOLUMETRIC, or when ≥ {s.requiredMisses} distinct planned
+                viewpoints with line of sight fail to re-detect it and none is VOLUMETRIC (detection not reproducible).
               </li>
               <li>
                 <b>UNCONFIRMED</b> when {s.maxViewpoints} planned viewpoints are spent, no reachable unused viewpoint exists, or the mission budget ends while
@@ -239,6 +241,30 @@ export default function MethodPage() {
               <li>
                 Candidate-level counts use one encounter = one candidate track (verification episode), not one frame. Intervals are 95% Wilson score
                 intervals. No calibration metrics (ECE, Brier) are reported because the system produces no probabilities.
+              </li>
+            </ul>
+          </section>
+
+          <section id="changes">
+            <h2>Changes made after the first calibration run</h2>
+            <p>
+              Calibration v1 (seeds 101–110, commit 2c5200c; summary in <code>docs/experiments/calibration-v1-summary.json</code>) was used for debugging as
+              well as threshold selection. Three changes followed; the held-out evaluation seeds were not run until after them.
+            </p>
+            <ul>
+              <li>
+                <b>Planner rings 1.6/2.0 m → 1.9/2.2 m, confirm range 2.2 → 2.5 m.</b> At 1.6 m the bottom of the camera view (floor 1.43 m ahead) cut off the
+                plant, so most verification views were truncated and inconclusive.
+              </li>
+              <li>
+                <b>New rule: REJECTED “not reproducible”</b> after {s.requiredMisses} distinct planned viewpoints with line of sight fail to re-detect the
+                candidate (and none supports it). Before, a one-off weak detection could only end UNCONFIRMED.
+              </li>
+              <li>
+                <b>New scenario <code>photo-board-decoy</code>.</b> v1 showed that our prints and displays never scored above 0.77 while the real plant scored
+                0.90–0.99, so a single-frame threshold of 0.9 separated them perfectly and matched SureStop. Real decoys need not be that weak, so we added a
+                life-size photo board, which the detector scores 0.96–0.99. This scenario was added because of what v1 showed; results are reported both with
+                and without it.
               </li>
             </ul>
           </section>

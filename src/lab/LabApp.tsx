@@ -21,6 +21,9 @@ interface RecordedFile {
 
 type Source = "recorded" | "local";
 
+/** Added after calibration v1 (see Method); results are also shown without it. */
+const POST_HOC_SCENARIO = "photo-board-decoy";
+
 const RUNNABLE: Array<{ spec: string; label: string }> = [
   { spec: "surestop", label: METHOD_LABELS.surestop },
   { spec: "single-frame", label: METHOD_LABELS["single-frame"] },
@@ -64,7 +67,15 @@ export default function LabApp() {
     rememberThresholds(rs);
     return rs;
   }, [source, recorded, local]);
-  const filtered = useMemo(() => (scenario === "all" ? runs : runs.filter((r) => r.result.scenarioId === scenario)), [runs, scenario]);
+  const filtered = useMemo(
+    () =>
+      scenario === "all"
+        ? runs
+        : scenario === "original"
+          ? runs.filter((r) => r.result.scenarioId !== POST_HOC_SCENARIO)
+          : runs.filter((r) => r.result.scenarioId === scenario),
+    [runs, scenario],
+  );
 
   return (
     <>
@@ -91,6 +102,7 @@ export default function LabApp() {
             <label htmlFor="scen-filter">Scenario</label>
             <select id="scen-filter" className="select" value={scenario} onChange={(e) => { setScenario(e.target.value); setSelected(null); }}>
               <option value="all">All scenarios</option>
+              <option value="original">Original six (excl. post-hoc photo board)</option>
               {SCENARIOS.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.title}

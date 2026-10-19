@@ -37,8 +37,10 @@ export const DEFAULT_MISSION: Omit<MissionConfig, "method"> = {
   standOff: 0.9,
   maxSimTime: 480,
   maxFrames: 160,
-  singleFrame: { threshold: 0.5 },
-  persistence: { threshold: 0.5, requiredHits: 3, window: 4, maxConsecutiveMisses: 3, step: 0.5, maxFrames: 10 },
+  // Baseline thresholds selected on calibration seeds 101-110 (public/data/calibration.json):
+  // best completion rate over all scenarios; ties to lower false-arrival rate, then lower τ.
+  singleFrame: { threshold: 0.9 },
+  persistence: { threshold: 0.8, requiredHits: 3, window: 4, maxConsecutiveMisses: 3, step: 0.5, maxFrames: 10 },
   surestop: DEFAULT_SURESTOP,
   planner: DEFAULT_PLANNER,
 };

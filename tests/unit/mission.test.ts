@@ -61,8 +61,8 @@ function layoutGrid(extra: Array<{ x: number; z: number; r: number }> = []): Occ
 }
 
 const START = { x: -5.6, z: 3.4, theta: -Math.PI / 2 };
-const POSTER: FakeCandidate = { x: -3.9, z: -4.85, facing: Math.PI / 2, relief: 0.003, score: 0.8 };
-const PLANT: FakeCandidate = { x: 4.9, z: -3.4, relief: 0.13, score: 0.9 };
+const POSTER: FakeCandidate = { x: -3.9, z: -4.85, facing: Math.PI / 2, relief: 0.003, score: 0.95 };
+const PLANT: FakeCandidate = { x: 4.9, z: -3.4, relief: 0.13, score: 0.97 };
 const GT: PlacedObject[] = [
   { id: "poster-w", kind: "picture-decoy", label: "print", model: { type: "poster", ofAsset: "plant", width: 0.6, height: 0.8 }, x: -3.9, z: -4.85, yaw: 0 },
   { id: "plant", kind: "target", label: "plant", model: { type: "asset", assetId: "plant" }, x: 4.9, z: -3.4, yaw: 0 },

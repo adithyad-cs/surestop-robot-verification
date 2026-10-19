@@ -1,33 +1,66 @@
 # Build status
 
-_Last updated: 2026-10-19 (Phase A complete; Phase B core in progress)._
+_Last updated 2026-10-19, during Phase D/E: calibration v2 running; evaluation pending._
 
 ## Implemented
-- Next.js 16 / React 19 / TypeScript project scaffold; Three.js r186; TF.js 4.22 COCO-SSD 2.2.3 (self-hosted weights).
-- Robot-camera sensor renderer: 640×480 RGB + pixel-aligned linear depth pass (alpha-mask aware), seeded depth-noise model.
-- Depth feature extractor (plane-fit relief above noise, two-plane RANSAC, truncation, validity).
-- Perception feasibility harness (`/diagnostics/perception`, `scripts/feasibility.mjs`).
-- Verification engine (pure TS): per-view evidence assessment, viewpoint-cell deduplication, SureStop candidate verifier
-  (CONFIRMED / REJECTED / UNCONFIRMED), bounded viewpoint planner; single-frame and temporal-persistence baselines.
-- Occupancy grid + A* path planner.
+- **Phase A, perception:** COCO-SSD 2.2.3 runs on real Three.js renders, with a pixel-aligned
+  depth pass and a noise model. Gate 1 **passed** (see PERCEPTION_FEASIBILITY.md).
+- **Phase B, verification engine:**
+  - per-view evidence: relief above noise, plus a two-plane RANSAC check
+  - viewpoint-cell deduplication
+  - SureStop verifier: CONFIRMED, REJECTED (flat or not reproducible) and UNCONFIRMED
+  - bounded re-observation planner
+  - baselines: single-frame and persistence (K of N)
+- **Phase C, end-to-end mission:**
+  - seven seeded scenarios
+  - world builder with a label-free occupancy map
+  - A* navigation
+  - browser RGB-D sensor with real inference
+  - mission runner with candidate-level and mission-level event logs
+  - evaluator that reads ground truth, kept separate from the robot
+- **Phase D, experiments:**
+  - batch engine with threshold variants
+  - seed protocol: calibration 101–110, held-out evaluation 1001–1020
+  - aggregation, calibration selection and the generated report
+  - CSV/JSON export
+- **Phase E, UI:**
+  - `/`: entry page using real mission frames
+  - `/console`: live 3-D view, camera, depth, verifier readout, candidates, timeline,
+    post-mission evaluator panel
+  - `/lab`: recorded and browser datasets, metrics with denominators and CIs, interval plot,
+    trial traces, live batches, exports, calibration table
+  - `/method`: parameters read from code, prior work, limitations
 
-## Commands actually run (results)
+## Commands actually run
 | Command | Result |
 |---|---|
 | `npx tsc --noEmit` | pass |
-| `npx eslint .` | pass (0 problems) |
-| `npx vitest run` | pass — 51 tests in 6 files |
+| `npx eslint .` | pass |
+| `npx vitest run` | pass: 67 tests |
 | `npx next build` | pass |
-| `node scripts/feasibility.mjs` (WebGL, 282 frames; WASM, 107 + 203 frames) | completed; see PERCEPTION_FEASIBILITY.md |
+| Feasibility harness (WebGL 282 frames; WASM 107 + 203 + 9 frames) | completed |
+| Mission batches with real inference: seed smoke runs; calibration v1, 660 missions, 39 min, 0 console errors | completed |
+| Playwright console run (poster-decoy, seed 1, SureStop): ARRIVED at the plant after REJECTING the print | completed |
+| Screenshots of `/`, `/method`, `/console` at 1440 / 1024 / 390 px: no horizontal overflow | completed |
 
-## Gate 1 (perception): PASSED — see PERCEPTION_FEASIBILITY.md
+## Findings that changed the plan, reported as they happened
+- **Calibration v1:** single-frame with a tuned τ = 0.9 matched or beat SureStop. Prints,
+  displays and the vase never scored above 0.86, while the plant scored 0.90–0.99.
+- **Two defects fixed after v1:**
+  - Planner rings were too close, so views of the plant were truncated.
+  - There was no rejection path for non-reproducible detections.
+- **New stress-test scenario:** `photo-board-decoy` was added, a life-size photo that scores
+  0.96–0.99. It was added after v1 and is reported separately.
 
-## Limitations known now
-- Category-level task only (physical potted plant); no instance identity.
-- A 3-D look-alike that COCO-SSD mislabels (vase with flowers) cannot be rejected by depth evidence.
-- Software-rendered WebGL in this container: inference measured with WASM (140 ms median) and SwiftShader WebGL (784 ms).
+## Known limitations
+- Category-level task only.
+- A 3-D look-alike (vase of flowers) cannot be rejected by depth.
+- Simulation only; decoys designed by us; 20 trials per cell; preliminary.
+- Software WebGL in this container (inference measured: WASM 140 ms median).
 
 ## Remaining
-- Phase C: world/scenarios, mission runner, browser sensor, end-to-end mission.
-- Phase D: experiment runner, metrics, exports, recorded runs.
-- Phase E: UI design brief and routes. Phase F/G: QA, README, deployment.
+- Calibration v2, then setting the default baseline thresholds, then the held-out evaluation
+  (7 scenarios × 20 seeds × 4 methods).
+- Generate `docs/RESULTS.md` and `public/data/eval-runs.json`.
+- Run the Playwright end-to-end suite against the production build, then final QA.
+- Deployment: no Vercel credentials here, so manual steps are in the README.

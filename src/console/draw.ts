@@ -17,24 +17,25 @@ export function drawDetections(img: ImageData, dets: Detection[], targetClass: s
   const s = W / img.width;
   const [c, ctx] = scratch(W, Math.round(img.height * s));
   ctx.drawImage(full, 0, 0, c.width, c.height);
-  ctx.font = "600 10px ui-monospace, Menlo, monospace";
+  ctx.font = "600 15px ui-monospace, Menlo, monospace";
   for (const d of dets) {
     if (d.score < 0.3) continue;
     const isTarget = d.cls === targetClass;
     const color = isTarget ? "#f5a524" : "rgba(231,233,236,0.75)";
     const [x, y, w, h] = d.bbox.map((v) => v * s);
-    ctx.lineWidth = isTarget ? 2 : 1;
+    ctx.lineWidth = isTarget ? 3 : 1.5;
     ctx.strokeStyle = color;
     ctx.setLineDash(isTarget ? [] : [3, 2]);
     ctx.strokeRect(x, y, w, h);
     ctx.setLineDash([]);
     const label = `${d.cls} ${d.score.toFixed(2)}`;
-    const tw = ctx.measureText(label).width + 6;
-    const ly = y > 13 ? y - 13 : y;
-    ctx.fillStyle = "rgba(14,16,19,0.85)";
-    ctx.fillRect(x, ly, tw, 13);
+    const tw = ctx.measureText(label).width + 8;
+    const lh = 19;
+    const ly = y > lh ? y - lh : y;
+    ctx.fillStyle = "rgba(14,16,19,0.88)";
+    ctx.fillRect(x, ly, tw, lh);
     ctx.fillStyle = color;
-    ctx.fillText(label, x + 3, ly + 10);
+    ctx.fillText(label, x + 4, ly + 14);
   }
   return c.toDataURL("image/jpeg", 0.82);
 }

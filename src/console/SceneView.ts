@@ -54,6 +54,7 @@ export class SceneView {
   private readonly env: THREE.Texture;
   private raf = 0;
   private userMoved = false;
+  private readonly background = new THREE.Color(0x0e1013);
   private disposed = false;
   private readonly resizeObs: ResizeObserver;
 
@@ -242,7 +243,7 @@ export class SceneView {
     const prevEnv = this.scene.environment;
     const prevBg = this.scene.background;
     this.scene.environment = this.env;
-    this.scene.background = new THREE.Color(0x0e1013);
+    this.scene.background = this.background;
     const ceiling = this.scene.getObjectByName("ceiling");
     if (ceiling) ceiling.visible = false;
     // Architectural cut-away for the overview only: walls are drawn at 62% height so the floor
