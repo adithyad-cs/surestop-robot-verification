@@ -5,8 +5,17 @@ import fs from "node:fs";
 import path from "node:path";
 
 const ROOT = path.resolve(__dirname, "../../src");
-const ROBOT_FACING = ["verify", "policies", "sensing", "perception"];
-const FORBIDDEN = [/@\/sim\/assets/, /@\/eval\//, /@\/scenarios\//, /groundTruth/i, /\.\.\/sim\/assets/, /\.\.\/eval\//];
+const ROBOT_FACING = ["verify", "policies", "sensing", "perception", "mission"];
+const FORBIDDEN = [
+  /@\/sim\/assets/,
+  /@\/sim\/world/,
+  /@\/eval\//,
+  /@\/scenarios\//,
+  /groundTruth/i,
+  /objectRoots/,
+  /\.\.\/sim\/assets/,
+  /\.\.\/eval\//,
+];
 
 function files(dir: string): string[] {
   if (!fs.existsSync(dir)) return [];

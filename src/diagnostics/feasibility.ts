@@ -6,6 +6,7 @@ import * as THREE from "three";
 import { ASSETS, type AssetSpec } from "@/sim/assets";
 import { loadAsset } from "@/sim/loadAsset";
 import { addLighting, buildBox, buildPoster, buildRoomShell, buildScreen } from "@/sim/props";
+import { studioPicture } from "@/sim/pictures";
 import { SensorRenderer, makeRobotCamera, ROBOT_CAMERA } from "@/sim/sensorRenderer";
 import { CocoSsdDetector, type CocoBase, type TfBackend } from "@/perception/cocoSsd";
 import type { Detection } from "@/perception/types";
@@ -162,38 +163,6 @@ export function iou(a: [number, number, number, number], b: [number, number, num
 function centreInside(d: [number, number, number, number], g: [number, number, number, number]): boolean {
   const cx = d[0] + d[2] / 2, cy = d[1] + d[3] / 2;
   return cx >= g[0] && cx <= g[0] + g[2] && cy >= g[1] && cy <= g[1] + g[3];
-}
-
-async function studioPicture(sensor: SensorRenderer, spec: AssetSpec, aspect: number): Promise<THREE.CanvasTexture> {
-  const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xdedbd5);
-  const obj = await loadAsset(spec);
-  scene.add(obj);
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), new THREE.MeshStandardMaterial({ color: 0xd8d4cc, roughness: 0.9 }));
-  floor.rotation.x = -Math.PI / 2;
-  floor.receiveShadow = true;
-  scene.add(floor);
-  addLighting(scene, { intensity: 1.1 });
-  const sphere = new THREE.Box3().setFromObject(obj).getBoundingSphere(new THREE.Sphere());
-  const cam = makeRobotCamera();
-  const dist = (sphere.radius / Math.sin((ROBOT_CAMERA.vfovDeg * Math.PI) / 360)) * 1.05;
-  const az = (25 * Math.PI) / 180;
-  cam.position.set(Math.sin(az) * dist, sphere.center.y + dist * 0.2, Math.cos(az) * dist);
-  cam.lookAt(sphere.center);
-  cam.updateMatrixWorld(true);
-  const img = sensor.renderRGB(scene, cam);
-  const { width: W, height: H } = ROBOT_CAMERA;
-  const cw = aspect >= W / H ? W : Math.round(H * aspect);
-  const ch = aspect >= W / H ? Math.round(W / aspect) : H;
-  const src = document.createElement("canvas");
-  src.width = W; src.height = H;
-  src.getContext("2d")!.putImageData(img, 0, 0);
-  const c = document.createElement("canvas");
-  c.width = cw; c.height = ch;
-  c.getContext("2d")!.drawImage(src, (W - cw) / 2, (H - ch) / 2, cw, ch, 0, 0, cw, ch);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
 }
 
 function posterSize(spec: AssetSpec): [number, number] {

@@ -88,8 +88,10 @@ export class SingleFramePolicy implements CandidatePolicy {
 
 export interface PersistenceConfig {
   threshold: number;
-  /** Consecutive frames at or above threshold needed to commit. */
-  requiredConsecutive: number;
+  /** Hits (frames at or above threshold) needed within the sliding window to commit. */
+  requiredHits: number;
+  /** Sliding window length (frames). */
+  window: number;
   /** Consecutive misses (no detection / below threshold) that drop the candidate. */
   maxConsecutiveMisses: number;
   /** Step (m) taken towards the candidate between frames while confirming. */
@@ -99,19 +101,25 @@ export interface PersistenceConfig {
 }
 
 /**
- * Temporal persistence gate (SG-Nav / AECNav-style): approach the candidate while
- * re-detecting it and commit after K consecutive above-threshold frames.
+ * Temporal persistence gate (in the spirit of SG-Nav / AECNav-style accumulation): approach
+ * the candidate while re-detecting it; commit once K of the last N frames clear the threshold.
  */
 export class PersistencePolicy implements CandidatePolicy {
   readonly method = "persistence" as const;
   private status: CandidateStatus = "PENDING";
   private reason = "accumulating consecutive detections";
   private readonly log: EvidenceRecord[] = [];
-  private streak = 0;
+  private readonly hits: boolean[] = [];
   private misses = 0;
   private frames = 0;
 
-  constructor(readonly config: PersistenceConfig, private candidate: { x: number; z: number }) {}
+  constructor(readonly config: PersistenceConfig, private candidate: { x: number; z: number }) {
+    if (config.requiredHits < 1 || config.window < config.requiredHits) throw new Error("invalid persistence configuration");
+  }
+
+  private windowHits(): number {
+    return this.hits.slice(-this.config.window).filter(Boolean).length;
+  }
 
   setCandidatePosition(p: { x: number; z: number }) {
     this.candidate = { ...p };
@@ -127,24 +135,23 @@ export class PersistencePolicy implements CandidatePolicy {
     }
     this.frames++;
     const s = obs.detection?.score ?? 0;
-    if (obs.detection && s >= this.config.threshold) {
-      this.streak++;
-      this.misses = 0;
-      rec.reason = `hit ${this.streak}/${this.config.requiredConsecutive} (score ${s.toFixed(2)})`;
-    } else {
-      this.streak = 0;
-      this.misses++;
-      rec.reason = `miss ${this.misses}/${this.config.maxConsecutiveMisses}`;
-    }
-    if (this.streak >= this.config.requiredConsecutive) {
+    const hit = !!obs.detection && s >= this.config.threshold;
+    this.hits.push(hit);
+    if (hit) this.misses = 0;
+    else this.misses++;
+    const k = this.windowHits();
+    rec.reason = hit
+      ? `hit (score ${s.toFixed(2)}): ${k}/${this.config.requiredHits} in last ${this.config.window} frames`
+      : `miss ${this.misses}/${this.config.maxConsecutiveMisses} (${obs.detection ? `score ${s.toFixed(2)}` : "not detected"})`;
+    if (k >= this.config.requiredHits) {
       this.status = "CONFIRMED";
-      this.reason = `${this.streak} consecutive frames with score ≥ ${this.config.threshold}`;
+      this.reason = `${k} of the last ${Math.min(this.config.window, this.hits.length)} frames with score ≥ ${this.config.threshold}`;
     } else if (this.misses >= this.config.maxConsecutiveMisses) {
       this.status = "REJECTED";
       this.reason = `lost: ${this.misses} consecutive frames without a detection ≥ ${this.config.threshold}`;
     } else if (this.frames >= this.config.maxFrames) {
       this.status = "UNCONFIRMED";
-      this.reason = `frame budget (${this.config.maxFrames}) spent without ${this.config.requiredConsecutive} consecutive hits`;
+      this.reason = `frame budget (${this.config.maxFrames}) spent without ${this.config.requiredHits} hits in ${this.config.window} frames`;
     }
     this.log.push(rec);
     return rec;
@@ -152,7 +159,7 @@ export class PersistencePolicy implements CandidatePolicy {
 
   next(): NextStep {
     if (this.status !== "PENDING") return { kind: "decided", decision: this.decision() };
-    return { kind: "step-towards", step: this.config.step, reason: `streak ${this.streak}/${this.config.requiredConsecutive}` };
+    return { kind: "step-towards", step: this.config.step, reason: `${this.windowHits()}/${this.config.requiredHits} hits in window` };
   }
 
   exhaust(why: string) {
@@ -166,7 +173,7 @@ export class PersistencePolicy implements CandidatePolicy {
     return {
       status: this.status,
       reason: this.reason,
-      support: this.streak,
+      support: this.windowHits(),
       against: this.misses,
       distinctViews: new Set(this.log.map((r) => r.cell)).size,
       attempts: this.frames,

@@ -6,6 +6,7 @@ export function features(p: Partial<DepthFeatures> = {}): DepthFeatures {
     samples: 1000,
     validFraction: 0.95,
     medianDepth: 1.6,
+    nearDepth: 1.5,
     centroidCam: [0, 0, 1.6],
     planeRms: 0.12,
     expectedNoise: 0.012,

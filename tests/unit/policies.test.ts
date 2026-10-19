@@ -24,8 +24,8 @@ describe("SingleFramePolicy", () => {
 });
 
 describe("PersistencePolicy", () => {
-  const cfg = { threshold: 0.5, requiredConsecutive: 3, maxConsecutiveMisses: 2, step: 0.5, maxFrames: 10 };
-  it("confirms after K consecutive hits and resets on a miss", () => {
+  const cfg = { threshold: 0.5, requiredHits: 3, window: 4, maxConsecutiveMisses: 2, step: 0.5, maxFrames: 10 };
+  it("confirms after K hits within the last N frames", () => {
     const p = new PersistencePolicy(cfg, { x: 0, z: 0 });
     p.observe(obs(3, 0, { score: 0.9 }));
     p.observe(obs(2.5, 0, { score: 0.9 }));
@@ -33,9 +33,16 @@ describe("PersistencePolicy", () => {
     expect(p.decision().status).toBe("PENDING");
     expect(p.next().kind).toBe("step-towards");
     p.observe(obs(1.5, 0, { score: 0.9 }));
-    p.observe(obs(1.5, 0, { score: 0.9 }));
-    p.observe(obs(1.5, 0, { score: 0.9 }));
     expect(p.decision().status).toBe("CONFIRMED");
+    expect(p.decision().reason).toMatch(/3 of the last 4/);
+  });
+  it("does not count hits that fell out of the window", () => {
+    const p = new PersistencePolicy({ ...cfg, maxConsecutiveMisses: 5 }, { x: 0, z: 0 });
+    for (const s of [0.9, 0.9, null, null, null, 0.9]) p.observe(obs(2, 0, { score: s }));
+    expect(p.decision().status).toBe("PENDING");
+  });
+  it("rejects an invalid configuration", () => {
+    expect(() => new PersistencePolicy({ ...cfg, window: 2 }, { x: 0, z: 0 })).toThrow();
   });
   it("drops the candidate after consecutive misses", () => {
     const p = new PersistencePolicy(cfg, { x: 0, z: 0 });
@@ -45,7 +52,7 @@ describe("PersistencePolicy", () => {
     expect(p.decision().status).toBe("REJECTED");
   });
   it("ends UNCONFIRMED when the frame budget is spent", () => {
-    const p = new PersistencePolicy({ ...cfg, maxFrames: 4, requiredConsecutive: 5, maxConsecutiveMisses: 9 }, { x: 0, z: 0 });
+    const p = new PersistencePolicy({ ...cfg, maxFrames: 4, requiredHits: 4, window: 4, maxConsecutiveMisses: 9 }, { x: 0, z: 0 });
     for (let i = 0; i < 4; i++) p.observe(obs(3, 0, { score: i % 2 ? 0.9 : 0.1 }));
     expect(p.decision().status).toBe("UNCONFIRMED");
   });
@@ -61,9 +68,15 @@ describe("planNextViewpoint", () => {
   });
 
   it("prefers a large bearing change from earlier views", () => {
-    const vp = planNextViewpoint({ x: 0, z: 0 }, { x: 1.5, z: 0 }, new Set(["r1:b0", "r2:b0"]), [0], open)!;
+    const vp = planNextViewpoint({ x: 0, z: 0 }, { x: 1.5, z: 0 }, new Set(["r2:b0", "r2:b11"]), [0], open)!;
     const change = Math.min(Math.abs(vp.bearingDeg), 360 - vp.bearingDeg);
     expect(change).toBeGreaterThanOrEqual(60);
+  });
+
+  it("places candidate viewpoints at bin centres, away from cell edges", () => {
+    const vp = planNextViewpoint({ x: 0, z: 0 }, { x: 3, z: 0 }, new Set(), [], open)!;
+    expect(vp.bearingDeg % 30).toBeCloseTo(15, 6);
+    expect(vp.cell.startsWith("r2:")).toBe(true);
   });
 
   it("respects blocked space and line of sight", () => {

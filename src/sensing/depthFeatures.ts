@@ -35,6 +35,8 @@ export interface DepthFeatures {
   validFraction: number;
   /** Median range (m) to the sampled surface. */
   medianDepth: number;
+  /** 25th-percentile range (m): the candidate's near surface, robust to background seen through gaps. */
+  nearDepth: number;
   /** Centroid of sampled points in camera frame (x right, y up, z forward), metres. */
   centroidCam: [number, number, number];
   /** RMS distance (m) of points to the best-fit plane. */
@@ -178,6 +180,7 @@ export function extractDepthFeatures(
     samples,
     validFraction: n / samples,
     medianDepth,
+    nearDepth: q(0.25),
     centroidCam: [mx, my, mz],
     planeRms,
     expectedNoise,

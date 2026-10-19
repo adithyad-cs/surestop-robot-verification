@@ -42,6 +42,10 @@ interface CellVote {
   bearingDeg: number;
 }
 
+function plural(n: number, noun: string): string {
+  return `${n} ${noun}${n === 1 ? "" : "s"}`;
+}
+
 function conclusive(v: ViewVerdict): boolean {
   return v !== "INCONCLUSIVE";
 }
@@ -164,7 +168,7 @@ export class SureStopVerifier {
     if (support >= c.requiredSupport && against === 0) {
       if (minSupportRange <= c.confirmRange) {
         this.status = "CONFIRMED";
-        this.reason = `volumetric evidence from ${support} distinct viewpoints, no flat evidence; closest supporting view ${minSupportRange.toFixed(2)} m`;
+        this.reason = `volumetric evidence from ${plural(support, "distinct viewpoint")}, no flat evidence; closest supporting view ${minSupportRange.toFixed(2)} m`;
       } else {
         this.reason = `support from ${support} views but none within ${c.confirmRange} m`;
       }
@@ -172,7 +176,7 @@ export class SureStopVerifier {
     }
     if (against >= c.requiredAgainst && support === 0) {
       this.status = "REJECTED";
-      this.reason = `flat-surface evidence from ${against} distinct viewpoints, no volumetric evidence (picture-like candidate)`;
+      this.reason = `flat-surface evidence from ${plural(against, "distinct viewpoint")}, no volumetric evidence (picture-like candidate)`;
       return;
     }
     if (support > 0 && against > 0) this.reason = `conflicting evidence: ${support} volumetric vs ${against} flat views`;

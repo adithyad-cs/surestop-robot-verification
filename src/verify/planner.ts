@@ -13,8 +13,15 @@ export interface NavQuery {
 }
 
 export interface PlannerConfig {
+  /** Candidate ring radii (m). Kept inside one range bin so that distinct cells mean distinct bearings. */
   ranges: number[];
+  /** Candidate bearings are placed at the centres of bins of this width, away from cell edges. */
   bearingStepDeg: number;
+  /**
+   * Line-of-sight is not checked over this final distance (m) to the candidate's estimated front
+   * surface, so the candidate's own (unknown) footprint does not hide it from the far side.
+   */
+  ownFootprint: number;
   /** Bearing change (deg) beyond which extra change earns no more credit. */
   saturatingChangeDeg: number;
   /** Score penalty per metre of travel. */
@@ -25,8 +32,9 @@ export interface PlannerConfig {
 }
 
 export const DEFAULT_PLANNER: PlannerConfig = {
-  ranges: [1.4, 1.9],
+  ranges: [1.6, 2.0],
   bearingStepDeg: 30,
+  ownFootprint: 0.8,
   saturatingChangeDeg: 75,
   pathWeight: 0.12,
   closenessWeight: 0.3,
@@ -57,13 +65,13 @@ export function planNextViewpoint(
   const maxRange = Math.max(...cfg.ranges);
   let best: PlannedViewpoint | null = null;
   for (const r of cfg.ranges) {
-    for (let b = 0; b < 360; b += cfg.bearingStepDeg) {
+    for (let b = cfg.bearingStepDeg / 2; b < 360; b += cfg.bearingStepDeg) {
       const rad = (b * Math.PI) / 180;
       const p = { x: candidate.x + r * Math.cos(rad), z: candidate.z + r * Math.sin(rad) };
       if (!nav.isFree(p.x, p.z)) continue;
       const cell = viewpointCell(p, candidate, cfg.cell);
       if (usedCells.has(cell.key)) continue;
-      if (!nav.lineOfSight(p, candidate, 0.45)) continue;
+      if (!nav.lineOfSight(p, candidate, cfg.ownFootprint)) continue;
       const len = nav.pathLength(robot, p);
       if (len === null) continue;
       const change = priorBearings.length
