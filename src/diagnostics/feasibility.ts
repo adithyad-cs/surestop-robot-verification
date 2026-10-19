@@ -207,6 +207,9 @@ export interface RunOptions {
   assetIds: string[];
   decoyAssetIds: string[];
   thumbs: boolean;
+  thumbScale?: number;
+  /** Run only cases whose id is listed. */
+  only?: string[];
   probeClass?: string;
   onProgress?: (done: number, total: number, rec: FeasRecord) => void;
 }
@@ -235,7 +238,7 @@ export async function runFeasibility(opts: RunOptions): Promise<FeasReport> {
     pictures.set(id, await studioPicture(sensor, spec, pw / ph));
   }
 
-  const cases = buildCases(opts.assetIds, opts.decoyAssetIds);
+  const cases = buildCases(opts.assetIds, opts.decoyAssetIds).filter((c) => !opts.only?.length || opts.only.includes(c.id));
   const records: FeasRecord[] = [];
   const latencies: number[] = [];
   const depthErrs: number[] = [];
@@ -378,7 +381,7 @@ export async function runFeasibility(opts: RunOptions): Promise<FeasReport> {
       renderMs,
       depthClean,
       depthNoisy,
-      thumb: opts.thumbs ? thumbnail(img, detections, gtBox) : undefined,
+      thumb: opts.thumbs ? thumbnail(img, detections, opts.thumbScale && opts.thumbScale >= 1 ? null : gtBox, opts.thumbScale ?? 0.4) : undefined,
     };
     records.push(rec);
     scene.remove(dyn);

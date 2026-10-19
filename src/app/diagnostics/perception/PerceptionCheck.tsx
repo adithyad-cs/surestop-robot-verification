@@ -26,6 +26,8 @@ export default function PerceptionCheck() {
     const assetIds = (params.get("assets") ?? "plant,sheenChair").split(",").filter(Boolean);
     const decoyAssetIds = (params.get("decoys") ?? "plant").split(",").filter(Boolean);
     const thumbs = params.get("thumbs") !== "0";
+    const thumbScale = Number(params.get("thumbScale") ?? "0.4");
+    const only = (params.get("only") ?? "").split(",").filter(Boolean);
     (async () => {
       try {
         const { runFeasibility } = await import("@/diagnostics/feasibility");
@@ -35,6 +37,8 @@ export default function PerceptionCheck() {
           assetIds,
           decoyAssetIds,
           thumbs,
+          thumbScale,
+          only,
           onProgress: (d, t, rec) => {
             setProgress([d, t]);
             setRecent((prev) => [rec, ...prev].slice(0, 12));

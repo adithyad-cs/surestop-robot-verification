@@ -1,0 +1,310 @@
+import AppHeader from "@/components/AppHeader";
+import { DEFAULT_EVIDENCE } from "@/verify/evidence";
+import { DEFAULT_SURESTOP } from "@/verify/surestop";
+import { DEFAULT_PLANNER } from "@/verify/planner";
+import { DEFAULT_CELL } from "@/verify/viewpoint";
+import { DEFAULT_MISSION } from "@/mission/runner";
+import { DEFAULT_DEPTH_NOISE } from "@/sensing/depthFeatures";
+import { METRIC_DEFINITIONS } from "@/eval/metrics";
+import { SCENARIOS } from "@/scenarios/layout";
+import { EVAL_SEEDS, CALIBRATION_SEEDS } from "@/experiments/protocol";
+import styles from "./method.module.css";
+
+export const metadata = { title: "Method" };
+
+const mm = (m: number) => `${Math.round(m * 1000)} mm`;
+
+export default function MethodPage() {
+  const e = DEFAULT_EVIDENCE;
+  const s = DEFAULT_SURESTOP;
+  const p = DEFAULT_PLANNER;
+  const m = DEFAULT_MISSION;
+  return (
+    <>
+      <AppHeader />
+      <main className={styles.page}>
+        <nav className={styles.toc} aria-label="On this page">
+          <a href="#task">Task contract</a>
+          <a href="#arch">Architecture</a>
+          <a href="#verify">Verification policy</a>
+          <a href="#baselines">Baselines</a>
+          <a href="#protocol">Protocol &amp; metrics</a>
+          <a href="#sensing">Sensing model</a>
+          <a href="#prior">Prior work</a>
+          <a href="#limits">Limitations</a>
+          <a href="#repro">Reproduce</a>
+        </nav>
+        <article className={styles.article}>
+          <h1>Method</h1>
+          <p className={styles.lede}>
+            What is implemented, what is measured, and what remains a hypothesis. Parameter values on this page are read from the same code the simulator runs.
+          </p>
+
+          <section id="task">
+            <h2>Task contract</h2>
+            <ul>
+              <li>
+                <b>Goal given to the robot:</b> the COCO class name <code>{m.targetClass}</code>. The task is <b>category-level</b>: stop at a physical,
+                three-dimensional potted plant. A picture or a display of a plant is not a valid target.
+              </li>
+              <li>
+                <b>What the robot may use:</b> rendered RGB frames, a pixel-aligned depth image with a noise model, its own pose, a fixed search route and a
+                label-free occupancy map for path planning.
+              </li>
+              <li>
+                <b>What it never sees:</b> object identities, scenario names, which object is the target, or any ground-truth label. A unit test fails if
+                robot-facing modules import the scenario, asset catalogue or evaluator.
+              </li>
+              <li>
+                <b>What the detector can and cannot establish:</b> COCO-SSD predicts a class and a box; it does not identify a particular plant. Depth
+                establishes whether the boxed surface is flat or volumetric; it does not establish semantic identity.
+              </li>
+            </ul>
+          </section>
+
+          <section id="arch">
+            <h2>Architecture</h2>
+            <div className={styles.arch} role="img" aria-label="Data flow from simulation through sensor, detector and verifier to the mission; evaluator reads results afterwards">
+              <div className={styles.lane}>
+                <span className={styles.laneTag}>Simulation</span>
+                <div>Three.js scene · glTF assets · robot pose · A* on occupancy grid</div>
+              </div>
+              <div className={styles.lane}>
+                <span className={`${styles.laneTag} ${styles.sensor}`}>Sensor</span>
+                <div>640×480 RGB render + aligned depth pass + seeded noise</div>
+              </div>
+              <div className={styles.lane}>
+                <span className={`${styles.laneTag} ${styles.model}`}>Perception</span>
+                <div>COCO-SSD (TF.js) on the RGB pixels → boxes, classes, scores</div>
+              </div>
+              <div className={styles.lane}>
+                <span className={`${styles.laneTag} ${styles.verifier}`}>Verifier</span>
+                <div>Depth features in box → per-view verdict → viewpoint cells → candidate decision → planned re-observation</div>
+              </div>
+              <div className={styles.lane}>
+                <span className={styles.laneTag}>Mission</span>
+                <div>Search route · candidate tracks · approach &amp; stop · event log</div>
+              </div>
+              <div className={`${styles.lane} ${styles.evalLane}`}>
+                <span className={`${styles.laneTag} ${styles.eval}`}>Evaluator</span>
+                <div>After the mission: labels candidates by position against ground truth and scores the trial. Never feeds back.</div>
+              </div>
+            </div>
+            <p>
+              Everything runs in the browser; there is no server-side inference. Perception results are memoised per exact camera pose within a run, so
+              methods that pass through the same pose see identical frames (renders and inference are deterministic on a given browser and backend).
+            </p>
+          </section>
+
+          <section id="verify">
+            <h2>Verification policy (SureStop)</h2>
+            <p>
+              A deterministic <b>sequential viewpoint evidence policy</b>. It is not an SPRT: votes are not likelihood ratios and no probability is
+              calibrated. The deck proposed calibrated log-likelihood ratios and Wald’s test; we did not have labelled data and time to fit and validate
+              such models, so we use transparent rules and say so.
+            </p>
+            <h3>Per-view assessment</h3>
+            <table className={styles.table}>
+              <tbody>
+                <tr>
+                  <th scope="row">Inputs</th>
+                  <td>Target-class detection (score, box) and depth inside the box, inset 20% to limit background bleed.</td>
+                </tr>
+                <tr>
+                  <th scope="row">Excess relief</th>
+                  <td>
+                    √max(0, RMS² − σ²): RMS distance of depth points to their best-fit plane, minus the sensor noise expected at that range.
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">INCONCLUSIVE if</th>
+                  <td>
+                    no detection (miss); no depth; box &lt; {e.minBoxW}×{e.minBoxH} px; box touches the image border; &lt; {e.minValidFraction * 100}% valid
+                    depth; expected noise &gt; {mm(e.maxExpectedNoise)}; relief between thresholds; or two flat planes explain ≥ {e.maxTwoPlaneFraction * 100}%
+                    of points (an occluder in front of a picture, or a wall corner).
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">VOLUMETRIC if</th>
+                  <td>
+                    relief ≥ {mm(e.volumetricRelief)} and detector score ≥ {e.minScore}.
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">FLAT if</th>
+                  <td>relief ≤ {mm(e.flatRelief)}.</td>
+                </tr>
+              </tbody>
+            </table>
+            <p className={styles.note}>
+              Thresholds were set from the Phase A feasibility renders (plant relief 98–192 mm, prints and displays ≤ 12 mm), which are separate from all
+              mission seeds. See PERCEPTION_FEASIBILITY.md.
+            </p>
+            <h3>Evidence accounting and decision</h3>
+            <ul>
+              <li>
+                <b>One vote per viewpoint cell.</b> A cell is the robot’s range bin ({DEFAULT_CELL.rangeBin} m) × bearing bin ({DEFAULT_CELL.bearingBinDeg}°)
+                around the candidate. Repeated frames in a cell share one vote; a conclusive or lower-noise observation can replace the cell’s vote.
+              </li>
+              <li>
+                <b>CONFIRMED</b> when ≥ {s.requiredSupport} distinct cells are VOLUMETRIC, none is FLAT, and one supporting view is within {s.confirmRange} m.
+              </li>
+              <li>
+                <b>REJECTED</b> when ≥ {s.requiredAgainst} distinct cells are FLAT and none is VOLUMETRIC.
+              </li>
+              <li>
+                <b>UNCONFIRMED</b> when {s.maxViewpoints} planned viewpoints are spent, no reachable unused viewpoint exists, or the mission budget ends while
+                verifying. Conflicting evidence never resolves to CONFIRMED.
+              </li>
+              <li>
+                A terminal candidate decision is final: later observations are logged but cannot change it.
+              </li>
+            </ul>
+            <h3>Bounded re-observation</h3>
+            <p>
+              Candidate viewpoints lie on rings of {p.ranges.join(" and ")} m around the candidate at the centres of {p.bearingStepDeg}° bearing bins. A
+              viewpoint must be free, reachable by A*, in an unused cell, and have line of sight (ignoring the last {p.ownFootprint} m, the candidate’s own
+              footprint). Score = 2 × min(bearing change, {p.saturatingChangeDeg}°)/{p.saturatingChangeDeg}° + {p.closenessWeight} × closeness −{" "}
+              {p.pathWeight} × path length. This is a geometric heuristic, not information-gain planning.
+            </p>
+            <h3>Candidate vs mission outcomes</h3>
+            <ul>
+              <li>REJECTED and UNCONFIRMED candidates are frozen and the search continues.</li>
+              <li>
+                Mission ends <b>ARRIVED</b> after approaching a CONFIRMED candidate to {m.standOff} m; <b>UNRESOLVED</b> if the route ends with any engaged
+                candidate UNCONFIRMED; <b>NOT_FOUND</b> otherwise; <b>NAV_FAILURE</b> if a confirmed candidate cannot be approached.
+              </li>
+              <li>
+                Budget: {m.maxFrames} frames or {m.maxSimTime} s simulated time. Search observations every {m.observeEvery} m plus scans at route waypoints.
+              </li>
+            </ul>
+          </section>
+
+          <section id="baselines">
+            <h2>Baselines</h2>
+            <ul>
+              <li>
+                <b>Single-frame threshold</b> (VLFM-style per the team’s code reading): commit to a candidate on the first frame with target score ≥ τ
+                (default τ = {m.singleFrame.threshold}), then approach and stop.
+              </li>
+              <li>
+                <b>Temporal persistence</b>: approach the candidate in {m.persistence.step} m steps, commit when {m.persistence.requiredHits} of the last{" "}
+                {m.persistence.window} frames score ≥ τ (default τ = {m.persistence.threshold}); drop it after {m.persistence.maxConsecutiveMisses}{" "}
+                consecutive misses.
+              </li>
+              <li>
+                <b>SureStop, one view (ablation)</b>: the same evidence and planner but a single conclusive view decides. It isolates the multi-view part.
+              </li>
+            </ul>
+            <p>
+              All methods share the detector, the detection floor ({m.detectionFloor}), candidate association, the search route and the approach behaviour.
+              Baseline thresholds τ are selected on calibration seeds by the rule in the Lab’s calibration table, never on evaluation seeds. SureStop moves to
+              extra viewpoints and therefore spends more frames and path; the Lab reports both.
+            </p>
+          </section>
+
+          <section id="protocol">
+            <h2>Protocol and metrics</h2>
+            <p>One trial = one seeded mission. Seeds jitter object placement and yaw, robot start pose, lighting and the depth-noise stream.</p>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th scope="col">Scenario</th>
+                  <th scope="col">Target present</th>
+                  <th scope="col">Description</th>
+                </tr>
+              </thead>
+              <tbody>
+                {SCENARIOS.map((sc) => (
+                  <tr key={sc.id}>
+                    <td>
+                      <code>{sc.id}</code>
+                    </td>
+                    <td>{sc.targetPresent ? "yes" : "no"}</td>
+                    <td>{sc.summary}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p>
+              Calibration seeds: {CALIBRATION_SEEDS[0]}–{CALIBRATION_SEEDS[CALIBRATION_SEEDS.length - 1]}. Held-out evaluation seeds: {EVAL_SEEDS[0]}–
+              {EVAL_SEEDS[EVAL_SEEDS.length - 1]} ({EVAL_SEEDS.length} per scenario and method).
+            </p>
+            <ul>
+              {Object.entries(METRIC_DEFINITIONS).map(([k, v]) => (
+                <li key={k}>
+                  <b>{k}</b>: {v}
+                </li>
+              ))}
+              <li>
+                Candidate-level counts use one encounter = one candidate track (verification episode), not one frame. Intervals are 95% Wilson score
+                intervals. No calibration metrics (ECE, Brier) are reported because the system produces no probabilities.
+              </li>
+            </ul>
+          </section>
+
+          <section id="sensing">
+            <h2>Sensing model</h2>
+            <ul>
+              <li>Camera: 640×480, 50° vertical FOV, 1.0 m high, pitched −10°, fixed to the robot.</li>
+              <li>
+                Depth: rendered linear depth along the optical axis, pixel-aligned with the RGB frame (validated against ray casting: median error 0.08 mm).
+                Noise σ(z) = {mm(DEFAULT_DEPTH_NOISE.sigma0)} + {DEFAULT_DEPTH_NOISE.k}·z² m per pixel, independent per pixel (real sensors have
+                correlated noise), returns beyond {DEFAULT_DEPTH_NOISE.maxRange} m dropped, transmissive glass not returned.
+              </li>
+              <li>Detector: COCO-SSD 2.2.3 lite_mobilenet_v2; WebGL on hardware GPUs, WASM when WebGL is software-rendered (same scores).</li>
+            </ul>
+          </section>
+
+          <section id="prior">
+            <h2>Prior work and the boundary of this contribution</h2>
+            <p>
+              Verifying a goal before stopping, using depth or geometry, persistence filters and active re-observation are all established ideas; we claim none
+              of them as novel. What this prototype tests is narrower: on our own decoy scenarios, does flat-surface depth evidence from distinct viewpoints, with
+              bounded re-observation and explicit abstention, reduce false arrivals relative to single-frame and persistence stop rules, and at what cost?
+            </p>
+            <ul>
+              <li>
+                <b>VLFM</b>: Yokoyama et al., “VLFM: Vision-Language Frontier Maps for Zero-Shot Semantic Navigation”, ICRA 2024, MIT licence (README read for
+                this build). The team’s deck reports, from reading the code, that the goal is set from a single detection above a fixed score and the agent
+                stops within 0.9 m; that detail is not stated in the README and was not re-verified here. Our single-frame baseline follows that description.
+              </li>
+              <li>
+                <b>PSG-Nav</b> (ICML 2026, proceedings.mlr.press/v306/chen26i.html) and <b>Uncertainty-Informed Active Perception for Open Vocabulary Object
+                Goal Navigation</b> (arXiv:2506.13367): relevant work on false goal detection and uncertainty-driven re-observation. Neither page was reachable
+                from this build environment, so we make no claims about their methods or results and do not compare against them.
+              </li>
+              <li>We have not reproduced any of these systems and claim no superiority over them.</li>
+            </ul>
+          </section>
+
+          <section id="limits">
+            <h2>Limitations and known failure modes</h2>
+            <ul>
+              <li>
+                <b>3-D look-alikes:</b> a vase of flowers is labelled “potted plant” by COCO-SSD in many views; it is volumetric, so depth evidence cannot reject
+                it. The look-alike scenario exists to show this failure honestly.
+              </li>
+              <li>Transparent targets, pictures on curved or relief surfaces, and wall corners can break the flatness cue (the two-plane check mitigates corners).</li>
+              <li>Distinct viewpoints are not statistically independent; vote counts are not probabilities.</li>
+              <li>Simulation only: one floor layout, scenarios and decoys designed by us, small trial counts; results are preliminary.</li>
+              <li>Navigation uses a prior occupancy map and perfect odometry; no dynamic obstacles or people; no safety claims.</li>
+              <li>Detector scores may differ slightly across GPUs and browsers; recorded runs list the backend used.</li>
+            </ul>
+          </section>
+
+          <section id="repro">
+            <h2>Reproduce</h2>
+            <ul>
+              <li>Any trial: open Mission Control with the same scenario, seed and method (the Lab’s “Replay” link fills these in).</li>
+              <li>A batch: Verification Lab → Run an experiment; export CSV/JSON.</li>
+              <li>
+                Headless: <code>npm run build && npm start</code>, then <code>node scripts/missions.mjs http://localhost:3000 &quot;run=1&amp;scenarios=…&amp;seeds=…&amp;methods=…&quot; out.json</code>.
+              </li>
+            </ul>
+          </section>
+        </article>
+      </main>
+    </>
+  );
+}

@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import type { RunRecord } from "@/experiments/engine";
-import type { MethodId } from "@/policies/types";
 
 let started = false;
 
@@ -22,7 +21,7 @@ export default function MissionCheck() {
     started = true;
     const scenarios = (q.get("scenarios") ?? "poster-decoy").split(",");
     const seeds = (q.get("seeds") ?? "1").split(",").map(Number);
-    const methods = (q.get("methods") ?? "single-frame,surestop").split(",") as MethodId[];
+    const variantSpecs = (q.get("methods") ?? "single-frame,surestop").split(",");
     const t0 = performance.now();
     if (q.get("snap") === "1") {
       (async () => {
@@ -38,16 +37,17 @@ export default function MissionCheck() {
     }
     (async () => {
       try {
-        const { ExperimentEngine } = await import("@/experiments/engine");
+        const { ExperimentEngine, parseVariant } = await import("@/experiments/engine");
+        const variants = variantSpecs.map(parseVariant);
         const engine = await ExperimentEngine.create(q.get("backend"));
         setLog((l) => [...l, `backend ${engine.detector.info.backend} (${engine.backend.reason})`]);
         const runs = await engine.runBatch(
-          { scenarios, seeds, methods },
+          { scenarios, seeds, variants },
           {
             onRun: (r, d, t) =>
               setLog((l) => [
                 ...l,
-                `[${d}/${t}] ${r.result.scenarioId} seed ${r.result.seed} ${r.result.method}: ${r.result.outcome} — ${r.result.reason} | eval: correct=${r.score.correctArrival} false=${r.score.falseArrival} frames=${r.result.stats.frames}`,
+                `[${d}/${t}] ${r.result.scenarioId} seed ${r.result.seed} ${r.variant}: ${r.result.outcome} — ${r.result.reason} | eval: correct=${r.score.correctArrival} false=${r.score.falseArrival} frames=${r.result.stats.frames}`,
               ]),
           },
         );

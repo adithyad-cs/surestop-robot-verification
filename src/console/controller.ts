@@ -1,0 +1,387 @@
+// Mission Control controller: owns the experiment engine, a mission runner and playback.
+// React subscribes through subscribe()/getState() (useSyncExternalStore).
+import type { ExperimentEngine, Prepared } from "@/experiments/engine";
+import type { MissionRunner } from "@/mission/runner";
+import type { MissionEvent, MissionMode, MissionResult, MissionStep, SensorFrame } from "@/mission/types";
+import type { TrialScore } from "@/eval/evaluate";
+import type { MethodId } from "@/policies/types";
+import type { Pose2 } from "@/verify/types";
+import type { DetectorInfo } from "@/perception/types";
+import type { BackendChoice } from "@/perception/backend";
+import { SceneView } from "./SceneView";
+import { drawDepth, drawDetections } from "./draw";
+
+export type Phase = "booting" | "ready" | "preparing" | "running" | "paused" | "done" | "error" | "unsupported";
+export type Speed = 1 | 4 | 16 | "instant";
+
+export interface FrameView {
+  frameId: number;
+  t: number;
+  purpose: string | null;
+  focusTrackId: string | null;
+  pose: Pose2;
+  detections: SensorFrame["detections"];
+  targets: Array<{
+    score: number;
+    bbox: [number, number, number, number];
+    relief: number | null;
+    noise: number | null;
+    twoPlane: number | null;
+    range: number | null;
+    trackId: string | null;
+    note: string;
+  }>;
+  inferenceMs: number;
+  cached: boolean;
+  rgbUrl: string;
+  depthUrl: string;
+}
+
+export interface ConsoleState {
+  phase: Phase;
+  stage: string;
+  error: string | null;
+  backend: BackendChoice | null;
+  detector: DetectorInfo | null;
+  scenarioId: string;
+  seed: number;
+  method: MethodId;
+  speed: Speed;
+  mode: MissionMode | null;
+  pose: Pose2 | null;
+  simTime: number;
+  frames: number;
+  pathLength: number;
+  tracks: MissionResult["tracks"];
+  events: MissionEvent[];
+  frameViews: FrameView[];
+  selectedFrameId: number | null;
+  selectedTrackId: string | null;
+  result: MissionResult | null;
+  score: TrialScore | null;
+  showGroundTruth: boolean;
+}
+
+const MAX_FRAME_VIEWS = 200;
+
+export class ConsoleController {
+  private state: ConsoleState;
+  private readonly listeners = new Set<() => void>();
+  private engine: ExperimentEngine | null = null;
+  private prepared: Prepared | null = null;
+  private runner: MissionRunner | null = null;
+  private view: SceneView | null = null;
+  private loopToken = 0;
+  private bootToken = 0;
+  private pauseRequested = false;
+  private stepOnce = false;
+  private resumeResolve: (() => void) | null = null;
+  readonly reducedMotion: boolean;
+
+  constructor(init: { scenarioId: string; seed: number; method: MethodId }) {
+    this.reducedMotion = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    this.state = {
+      phase: "booting",
+      stage: "Starting",
+      error: null,
+      backend: null,
+      detector: null,
+      ...init,
+      speed: 4,
+      mode: null,
+      pose: null,
+      simTime: 0,
+      frames: 0,
+      pathLength: 0,
+      tracks: [],
+      events: [],
+      frameViews: [],
+      selectedFrameId: null,
+      selectedTrackId: null,
+      result: null,
+      score: null,
+      showGroundTruth: false,
+    };
+  }
+
+  subscribe = (fn: () => void) => {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  };
+
+  getState = () => this.state;
+
+  private set(patch: Partial<ConsoleState>) {
+    this.state = { ...this.state, ...patch };
+    this.listeners.forEach((l) => l());
+  }
+
+  // ------------------------------------------------------------------ lifecycle
+
+  async boot(
+    container: HTMLElement,
+    backendOverride: string | null,
+    init?: Partial<Pick<ConsoleState, "scenarioId" | "seed" | "method">>,
+  ) {
+    if (this.view) return;
+    const token = ++this.bootToken;
+    if (init) this.set(init);
+    try {
+      const probe = document.createElement("canvas").getContext("webgl2");
+      if (!probe) {
+        this.set({ phase: "unsupported", error: "This browser does not provide WebGL2, which the simulator and depth sensor require." });
+        return;
+      }
+      if (!probe.getExtension("EXT_color_buffer_float")) {
+        this.set({ phase: "unsupported", error: "WebGL2 float render targets (EXT_color_buffer_float) are unavailable, so the depth sensor cannot run." });
+        return;
+      }
+      probe.getExtension("WEBGL_lose_context")?.loseContext();
+      this.view = new SceneView(container);
+      this.set({ stage: "Loading detector weights (17 MB, cached after first visit)" });
+      const { ExperimentEngine } = await import("@/experiments/engine");
+      const engine = await ExperimentEngine.shared(backendOverride);
+      if (token !== this.bootToken) return;
+      this.engine = engine;
+      this.set({ backend: engine.backend, detector: engine.detector.info });
+      await this.loadScenario();
+    } catch (e) {
+      this.set({ phase: "error", error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  dispose() {
+    this.bootToken++;
+    this.loopToken++;
+    this.resumeResolve?.();
+    this.view?.setWorld(null);
+    this.view?.dispose();
+    // The engine is a shared page-level resource (see ExperimentEngine.shared); it is not disposed here.
+    this.view = null;
+    this.engine = null;
+    this.runner = null;
+    this.prepared = null;
+  }
+
+  private async loadScenario() {
+    if (!this.engine || !this.view) return;
+    this.loopToken++;
+    this.pauseRequested = false;
+    this.resumeResolve?.();
+    this.set({ phase: "preparing", stage: "Building scene and loading 3-D assets" });
+    this.prepared = await this.engine.prepare(this.state.scenarioId, this.state.seed, true);
+    this.view.setWorld(this.prepared.world.scene);
+    this.view.setRobot(this.prepared.inst.start);
+    this.runner = this.engine.createRunner(this.prepared, this.state.method);
+    this.set({
+      phase: "ready",
+      stage: "",
+      mode: null,
+      pose: this.prepared.inst.start,
+      simTime: 0,
+      frames: 0,
+      pathLength: 0,
+      tracks: [],
+      events: [],
+      frameViews: [],
+      selectedFrameId: null,
+      selectedTrackId: null,
+      result: null,
+      score: null,
+      showGroundTruth: false,
+    });
+  }
+
+  async configure(patch: Partial<Pick<ConsoleState, "scenarioId" | "seed" | "method">>) {
+    if (this.state.phase === "running") return;
+    this.set(patch);
+    if (this.engine) await this.loadScenario().catch((e) => this.set({ phase: "error", error: String(e) }));
+  }
+
+  setSpeed(speed: Speed) {
+    this.set({ speed });
+  }
+
+  async reset() {
+    this.pauseRequested = false;
+    this.resumeResolve?.();
+    await this.loadScenario();
+  }
+
+  start() {
+    if (!this.runner || !(this.state.phase === "ready" || this.state.phase === "paused")) return;
+    if (this.state.phase === "paused") {
+      this.pauseRequested = false;
+      this.set({ phase: "running" });
+      this.resumeResolve?.();
+      return;
+    }
+    this.pauseRequested = false;
+    void this.loop();
+  }
+
+  pause() {
+    if (this.state.phase === "running") this.pauseRequested = true;
+  }
+
+  /** Executes exactly one mission step, then pauses. */
+  step() {
+    if (!this.runner) return;
+    if (this.state.phase === "ready") {
+      this.pauseRequested = true;
+      void this.loop();
+    } else if (this.state.phase === "paused") {
+      this.stepOnce = true;
+      this.set({ phase: "running" });
+      this.resumeResolve?.();
+    }
+  }
+
+  abort() {
+    this.runner?.abort();
+    if (this.state.phase === "paused") {
+      this.pauseRequested = false;
+      this.resumeResolve?.();
+    }
+  }
+
+  select(patch: { frameId?: number | null; trackId?: string | null }) {
+    const p: Partial<ConsoleState> = {};
+    if (patch.frameId !== undefined) p.selectedFrameId = patch.frameId;
+    if (patch.trackId !== undefined) p.selectedTrackId = patch.trackId;
+    this.set(p);
+    this.refreshMarkers();
+  }
+
+  toggleGroundTruth(on: boolean) {
+    if (this.state.phase !== "done" || !this.prepared) return;
+    this.set({ showGroundTruth: on });
+    this.view?.setGroundTruth(
+      on
+        ? this.prepared.inst.objects
+            .filter((o) => o.kind !== "furniture" && o.kind !== "obstacle")
+            .map((o) => ({ id: o.id, x: o.x, z: o.z, label: o.label, isTarget: o.kind === "target" }))
+        : null,
+    );
+  }
+
+  // ------------------------------------------------------------------ loop
+
+  private async loop() {
+    const token = ++this.loopToken;
+    const runner = this.runner!;
+    this.set({ phase: "running" });
+    while (!runner.done && token === this.loopToken) {
+      // Yield to the browser every step so input (Pause, Abort) and painting stay responsive.
+      await new Promise<void>((r) => requestAnimationFrame(() => r()));
+      if (token !== this.loopToken) return;
+      const s = await runner.step();
+      if (token !== this.loopToken) return;
+      await this.present(s, token);
+      if (token !== this.loopToken) return;
+      if (runner.done) break;
+      if (this.pauseRequested || this.stepOnce) {
+        this.stepOnce = false;
+        this.set({ phase: "paused" });
+        await new Promise<void>((r) => (this.resumeResolve = r));
+        this.resumeResolve = null;
+        if (token !== this.loopToken) return;
+      }
+    }
+    if (token !== this.loopToken) return;
+    const result = runner.result();
+    const score = this.engine!.score(this.prepared!, result);
+    this.set({ phase: "done", result, score, tracks: result.tracks, mode: "DONE" });
+    this.refreshMarkers();
+  }
+
+  private async present(s: MissionStep, token: number) {
+    const view = this.view;
+    if (view) {
+      view.setPlannedPath(s.plannedPath);
+      await this.animate(s.segment, token);
+      const end = s.segment[s.segment.length - 1];
+      view.setRobot(end);
+    }
+    const r = this.runner!.result();
+    let frameViews = this.state.frameViews;
+    if (s.frame && this.prepared) {
+      const fr = r.frames[r.frames.length - 1];
+      const sensor = this.prepared.sensor;
+      const fv: FrameView = {
+        frameId: s.frame.frameId,
+        t: s.frame.t,
+        purpose: s.purpose,
+        focusTrackId: s.focusTrackId,
+        pose: s.frame.robot,
+        detections: s.frame.detections,
+        targets: (fr?.targets ?? []).map((t) => ({
+          score: t.score,
+          bbox: t.bbox,
+          relief: t.excessRelief,
+          noise: t.expectedNoise,
+          twoPlane: t.twoPlaneFraction,
+          range: t.range,
+          trackId: t.trackId,
+          note: t.note,
+        })),
+        inferenceMs: s.frame.inferenceMs,
+        cached: s.frame.cached,
+        rgbUrl: sensor.lastImage ? drawDetections(sensor.lastImage, s.frame.detections, "potted plant") : "",
+        depthUrl: sensor.lastDepth ? drawDepth(sensor.lastDepth, sensor.intr.width, sensor.intr.height, s.frame.targets.map((t) => t.detection.bbox)) : "",
+      };
+      frameViews = [...frameViews, fv].slice(-MAX_FRAME_VIEWS);
+    }
+    this.set({
+      mode: s.mode,
+      pose: this.runner!.currentPose,
+      simTime: r.stats.simTime,
+      frames: r.stats.frames,
+      pathLength: r.stats.pathLength,
+      tracks: r.tracks,
+      events: r.events,
+      frameViews,
+      selectedFrameId: s.frame ? s.frame.frameId : this.state.selectedFrameId,
+    });
+    this.refreshMarkers();
+  }
+
+  private refreshMarkers() {
+    this.view?.setCandidates(
+      this.state.tracks.map((t) => ({
+        id: t.id,
+        x: t.position.x,
+        z: t.position.z,
+        status: t.status,
+        selected: t.id === this.state.selectedTrackId,
+      })),
+    );
+  }
+
+  private animate(seg: Pose2[], token: number): Promise<void> {
+    const view = this.view;
+    if (!view || seg.length < 2) return Promise.resolve();
+    const speed = this.state.speed;
+    if (speed === "instant" || this.reducedMotion) {
+      for (const p of seg) view.setRobot(p);
+      return Promise.resolve();
+    }
+    // Segment poses are 0.1 s of simulated time apart.
+    const duration = ((seg.length - 1) * 100) / speed;
+    return new Promise((resolve) => {
+      const t0 = performance.now();
+      const tick = () => {
+        if (token !== this.loopToken) return resolve();
+        const k = Math.min(1, (performance.now() - t0) / duration);
+        const f = k * (seg.length - 1);
+        const i = Math.min(seg.length - 2, Math.floor(f));
+        const a = seg[i], b = seg[i + 1], u = f - i;
+        const dth = Math.atan2(Math.sin(b.theta - a.theta), Math.cos(b.theta - a.theta));
+        view.setRobot({ x: a.x + (b.x - a.x) * u, z: a.z + (b.z - a.z) * u, theta: a.theta + dth * u });
+        if (k < 1) requestAnimationFrame(tick);
+        else resolve();
+      };
+      requestAnimationFrame(tick);
+    });
+  }
+}
