@@ -26,7 +26,7 @@ export default function Home() {
             </li>
             <li>
               <span className={styles.stepName}>Arrive</span>
-              <span>Only a CONFIRMED candidate ends the mission with ARRIVED. Ground truth is used afterwards, by an independent evaluator.</span>
+              <span>Only a CONFIRMED candidate ends the mission with ARRIVED. Ground truth is used afterwards, by a separate evaluator module.</span>
             </li>
           </ol>
           <Link href="/console" className={`btn btn-primary ${styles.cta}`}>

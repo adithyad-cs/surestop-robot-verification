@@ -5,6 +5,17 @@ Date: 2026-10-19. Every number below comes from real runs of the harness at
 are in `docs/feasibility/*.json`; sample frames (with real detector boxes drawn) are in
 `docs/feasibility/frames/`.
 
+| Report file | Run |
+|---|---|
+| `report-webgl-full.json` | full study, WebGL (SwiftShader), 282 views |
+| `report-wasm-plant.json` | plant-focused views, WASM, 107 views |
+| `report-wasm-depthval.json` | non-plant assets plus depth validation, WASM, 203 views |
+| `report-cpu.json` | latency of the pure-JS CPU backend, 36 views |
+| `report-wasm-board.json` | life-size photo-board probe, run after calibration v1, 9 views |
+
+The CPU and photo-board reports were first kept only in the build session's scratchpad. They
+were copied here unmodified on 2026-10-20 (SHA-256 `e5b635c1…` and `f07e1749…`).
+
 ## What was tested
 
 - **Renderer.** Three.js r186 WebGL renders of the robot camera: 640×480, 50° vertical FOV,
@@ -17,7 +28,10 @@ are in `docs/feasibility/*.json`; sample frames (with real detector boxes drawn)
 - **Depth.** A second render pass produces pixel-aligned linear depth (metres along the
   optical axis). The pass honours alpha-masked foliage and skips transmissive glass. A seeded
   noise model is applied, with σ(z) = 2 mm + 0.004·z² m.
-- **Assets.** Khronos glTF Sample Assets (CC0 / CC-BY-4.0; see `src/sim/assets.ts`):
+- **Assets.** Khronos glTF Sample Assets (CC0 / CC-BY-4.0; see `THIRD_PARTY_NOTICES.md`).
+  SheenWoodLeatherSofa and CommercialRefrigerator were rendered from local copies that are not
+  redistributed with this repository, so their rows cannot be re-run without downloading them
+  first:
   - DiffuseTransmissionPlant (potted plant)
   - GlassVaseFlowers
   - SheenChair
@@ -28,6 +42,11 @@ are in `docs/feasibility/*.json`; sample frames (with real detector boxes drawn)
   - CommercialRefrigerator
 - **Decoys.** A framed print hung flat on the wall, and a display showing an image. In both,
   the image is a studio render of the same plant asset.
+- **Added after calibration v1.** A life-size photo board, probed in 9 views
+  (`report-wasm-board.json`):
+  - within 30° of its normal at 1.2–3 m, it scored 0.96–0.99 in 5 of 6 views (0.83 at 3 m, 30°)
+  - at 60° it scored 0.45–0.64
+  - relief was 0 mm in all 9 views
 - **Conditions:**
   - 4 distances × 6 bearings for each object
   - posters and screens at 3 distances × 4 off-normal angles
@@ -68,8 +87,8 @@ are in `docs/feasibility/*.json`; sample frames (with real detector boxes drawn)
 
 **False positives.**
 - "potted plant" never fires at ≥ 0.5 on the chairs, sofas, pouf or refrigerator.
-- The floor–wall junction occasionally produces "bench" (up to 0.73). That is not the target
-  class.
+- The detector occasionally reports "bench": up to 0.84 in the full run (a close view of
+  ChairDamaskPurplegold) and up to 0.73 in the plant-only run. That is not the target class.
 
 ## Depth separates flat pictures from the 3-D plant
 
@@ -86,8 +105,12 @@ the detection box (20 % inset) with sensor noise applied:
 
 A deterministic two-plane RANSAC check distinguishes "volumetric" from "two flat layers": for
 example, a crate in front of a picture, or a wall corner.
-- For the plant within 2 m, two planes explain ≤ 64 % of points.
 - A synthetic crate-over-picture case is fully explained by two planes (unit test).
+- The feasibility reports do not store the two-plane fraction, so this report gives no figure
+  for it.
+- The held-out mission records (`public/data/eval-runs.json`) do store it. For real-plant
+  observations within 2 m and with expected noise ≤ 30 mm (295 frames), the largest two-plane
+  fraction was 0.62, against the 0.85 gate.
 
 **Depth/ray alignment.**
 - Depth is checked against Three.js ray-casting through the same pixel centres on 2,436
@@ -103,7 +126,7 @@ example, a crate in front of a picture, or a wall corner.
 |---|---|---|---|
 | WebGL (SwiftShader) | 8.0 s | 784 ms | 964 ms |
 | WASM (SIMD) | 0.54 s | **140 ms** | 203 ms |
-| CPU (pure JS) | 3.4 s | 3,236 ms | 4,020 ms |
+| CPU (pure JS), 36 views (`report-cpu.json`) | 3.4 s | 3,236 ms | 4,020 ms |
 
 - WASM and WebGL produce the same scores (matching to ~1e-7).
 - On machines with a hardware GPU, WebGL is expected to be faster. I have not measured that

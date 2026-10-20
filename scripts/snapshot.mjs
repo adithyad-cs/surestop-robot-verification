@@ -1,3 +1,4 @@
+// Needs a build with SURESTOP_DIAGNOSTICS=1 (npm run build:diagnostics) or `next dev`.
 import { chromium } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
@@ -6,7 +7,12 @@ fs.mkdirSync(outDir, { recursive: true });
 const browser = await chromium.launch({ args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] });
 const page = await browser.newPage();
 page.on("pageerror", (e) => console.error("pageerror", String(e)));
-await page.goto(`${baseUrl}/diagnostics/mission?run=1&snap=1&scenarios=${scenario}&seeds=${seed}${backend ? `&backend=${backend}` : ""}`);
+const resp = await page.goto(`${baseUrl}/diagnostics/mission?run=1&snap=1&scenarios=${scenario}&seeds=${seed}${backend ? `&backend=${backend}` : ""}`);
+if (!resp || resp.status() === 404) {
+  console.error("/diagnostics/mission is not available on this server. Build with SURESTOP_DIAGNOSTICS=1 (npm run build:diagnostics) or use next dev.");
+  await browser.close();
+  process.exit(2);
+}
 await page.waitForFunction(() => !!window.__SURESTOP_SNAP__, null, { timeout: 600000 });
 const data = await page.evaluate(() => window.__SURESTOP_SNAP__);
 await browser.close();

@@ -6,6 +6,7 @@ import StatusBadge from "@/components/StatusBadge";
 import { SCENARIOS } from "@/scenarios/layout";
 import { candidateMetrics, groupBy, METRIC_DEFINITIONS, missionMetrics, type Rate } from "@/eval/metrics";
 import { experimentToJson, trialsToCsv } from "@/eval/export";
+import { CORRECTION_LABEL, PROTOCOL_CORRECTIONS } from "@/eval/protocolNotes";
 import type { RunRecord } from "@/experiments/engine";
 import type { MissionResult } from "@/mission/types";
 import { clearRuns, loadRuns, saveRun } from "@/lib/runStore";
@@ -243,7 +244,14 @@ function Provenance({ file }: { file: RecordedFile }) {
         {Object.entries(file.protocol).map(([k, v]) => (
           <div key={k}>
             <dt>{k}</dt>
-            <dd>{typeof v === "string" ? v : JSON.stringify(v)}</dd>
+            <dd>
+              {typeof v === "string" ? v : JSON.stringify(v)}
+              {PROTOCOL_CORRECTIONS[k] && (
+                <span className={styles.correction}>
+                  {CORRECTION_LABEL}: {PROTOCOL_CORRECTIONS[k]}
+                </span>
+              )}
+            </dd>
           </div>
         ))}
       </dl>

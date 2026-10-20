@@ -172,7 +172,7 @@ function centreInside(d: [number, number, number, number], g: [number, number, n
 }
 
 function posterSize(spec: AssetSpec): [number, number] {
-  if (spec.id === "plant" || spec.id === "vaseFlowers" || spec.id === "fridge" || spec.id === "bottle") return [0.6, 0.8];
+  if (spec.id === "plant" || spec.id === "vaseFlowers") return [0.6, 0.8];
   if (spec.id.includes("Sofa")) return [1.1, 0.62];
   return [0.8, 0.6];
 }
@@ -239,6 +239,9 @@ export async function runFeasibility(opts: RunOptions): Promise<FeasReport> {
   const cam = makeRobotCamera();
   const pictures = new Map<string, THREE.Texture>();
   const boards = new Map<string, THREE.Texture>();
+  for (const id of [...opts.assetIds, ...opts.decoyAssetIds]) {
+    if (!ASSETS[id]) throw new Error(`unknown or unshipped asset "${id}" (see src/sim/assets.ts)`);
+  }
   for (const id of opts.decoyAssetIds) {
     const spec = ASSETS[id];
     const [pw, ph] = posterSize(spec);

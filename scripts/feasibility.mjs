@@ -1,4 +1,5 @@
 // Drives /diagnostics/perception in headless Chromium and writes the raw report.
+// Needs a build with SURESTOP_DIAGNOSTICS=1 (npm run build:diagnostics) or `next dev`.
 // Usage: node scripts/feasibility.mjs [baseUrl] [query] [outDir]
 import { chromium } from "@playwright/test";
 import fs from "node:fs";
@@ -17,7 +18,12 @@ const consoleErrors = [];
 page.on("console", (m) => { if (m.type() === "error") consoleErrors.push(m.text()); });
 page.on("pageerror", (e) => consoleErrors.push(String(e)));
 const t0 = Date.now();
-await page.goto(`${baseUrl}/diagnostics/perception?${query}`, { waitUntil: "load" });
+const resp = await page.goto(`${baseUrl}/diagnostics/perception?${query}`, { waitUntil: "load" });
+if (!resp || resp.status() === 404) {
+  console.error("/diagnostics/perception is not available on this server. Build with SURESTOP_DIAGNOSTICS=1 (npm run build:diagnostics) or use next dev.");
+  await browser.close();
+  process.exit(2);
+}
 let last = "";
 for (;;) {
   const done = await page.evaluate(() => !!window.__SURESTOP_FEASIBILITY__);

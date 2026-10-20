@@ -1,4 +1,5 @@
 // Runs /diagnostics/mission headlessly and writes the full results.
+// Needs a build with SURESTOP_DIAGNOSTICS=1 (npm run build:diagnostics) or `next dev`.
 // Usage: node scripts/missions.mjs <baseUrl> "<query>" <out.json>
 import { chromium } from "@playwright/test";
 import fs from "node:fs";
@@ -10,7 +11,12 @@ const errors = [];
 page.on("pageerror", (e) => errors.push(String(e)));
 page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
 const t0 = Date.now();
-await page.goto(`${baseUrl}/diagnostics/mission?${query}`);
+const resp = await page.goto(`${baseUrl}/diagnostics/mission?${query}`);
+if (!resp || resp.status() === 404) {
+  console.error("/diagnostics/mission is not available on this server. Build with SURESTOP_DIAGNOSTICS=1 (npm run build:diagnostics) or use next dev.");
+  await browser.close();
+  process.exit(2);
+}
 let seen = 0;
 for (;;) {
   const done = await page.evaluate(() => !!window.__SURESTOP_MISSIONS__);

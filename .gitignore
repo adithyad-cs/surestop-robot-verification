@@ -155,3 +155,6 @@ blob-report/
 feasibility-out/
 next-env.d.ts
 .cache/
+
+# Reproduction outputs (README, "Reproduce experiments")
+repro/

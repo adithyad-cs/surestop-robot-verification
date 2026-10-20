@@ -10,7 +10,7 @@ Robot* track (Team Nexora4).
   potted plant** or only looks like one, such as a framed print or a display.
 - It decides by collecting depth evidence from distinct viewpoints, and it abstains when the
   evidence stays insufficient.
-- An independent evaluator scores every mission against ground truth the robot never sees.
+- A separate evaluator module scores every mission against ground truth the robot never sees.
 
 > Scope: a category-level task in simulation. No real-robot, safety, instance-identity,
 > novelty or statistical-guarantee claims.
@@ -62,27 +62,48 @@ browser.
 | SureStop | **0% (0/85)** | **100% (140/140)** | **0% (0/65)** | 100% (120/120) | 36.2 m |
 
 What this does and does not show:
-- **Original six scenarios.** The tuned single-frame threshold also had no false arrivals. Our
-  prints and displays score below the real plant (≤ 0.77 against 0.90–0.99), so a threshold
-  separates them. Here SureStop's measurable differences are 3 extra completions (occluded
-  target) and a cost of about 39 % more path on those six (36.1 m against 25.9 m).
-- **Where false arrivals differ.** The gap comes from `photo-board-decoy`, a free-standing
-  life-size photo that the detector scores 0.96–0.99. On that scenario single-frame falsely
-  arrives in 16/20 trials and SureStop in 0/20.
-  - We added this scenario *after* the first calibration run exposed the score gap (see
-    `/method`).
-  - It shows the mechanism, which is that flat-surface evidence does not depend on the
-    detector score. It does not show how common such decoys are.
-- **The vase look-alike was not rejected by depth.** It is volumetric. The vase became a
-  candidate in 18 of 20 trials, and all 18 ended UNCONFIRMED, because the detector did not label the vase "potted plant" consistently
-  from two distinct viewpoints. The one-view ablation falsely arrived 7/20. A look-alike that
-  is detected consistently would be confirmed.
-- **Abstention never occurred on held-out seeds.** The UNCONFIRMED path is exercised in unit
-  tests and appeared in calibration v1.
+- **Original six scenarios.** The tuned single-frame threshold also had no false arrivals
+  (0/65).
+  - Seen from the search route, our prints and displays scored below the real plant. Across
+    all held-out route views, the best print score was 0.78 and the best display score 0.44.
+  - The plant's best score per encounter in single-frame runs was 0.80–0.99 (median 0.98);
+    101 of 104 encounters reached 0.9.
+  - Closer views score higher. When the persistence baseline stepped towards them, prints
+    reached 0.95 and displays 0.98. So the threshold works here partly because of where the
+    route sees the decoys from.
+  - SureStop's measurable differences on these six:
+    - 3 extra completions (occluded target). These are not distinguishable at 20 seeds: exact
+      paired test p = 0.25.
+    - About 39 % more path (36.1 m against 25.9 m).
+- **Where false arrivals differ.** All 16 single-frame false arrivals come from
+  `photo-board-decoy`, a free-standing, life-size photo of the plant.
+  - In single-frame runs, the board's best score per encounter was 0.87–0.99 (median 0.97), and
+    16 of 20 encounters reached τ = 0.9. SureStop falsely arrived in 0/20.
+  - We added this scenario *after* the first calibration run showed the score gap (see
+    `/method`). It also moved the selected persistence threshold from 0.6 to 0.8.
+  - It demonstrates the mechanism: flat-surface evidence does not depend on the detector score.
+    It does not show how common such decoys are.
+- **The vase look-alike was not rejected by depth.** It is volumetric.
+  - The vase became a candidate in 18 of 20 trials, and all 18 ended UNCONFIRMED. That happened
+    because the detector did not label it "potted plant" consistently from two distinct
+    viewpoints.
+  - The one-view ablation falsely arrived in 7/20. A look-alike that is detected consistently
+    would be confirmed.
+- **Mission-level abstention never occurred on held-out seeds.** The UNCONFIRMED path is covered
+  by unit tests and appeared in calibration v1, but its held-out frequency is not validated.
 - **Caveats.**
   - These are our scenarios and our decoys, in simulation, with 20 trials per cell.
-  - SureStop was debugged on the calibration seeds of these scenarios.
-  - Our persistence baseline may be weaker than other persistence designs.
+  - SureStop's planner and decision rules were revised after inspecting calibration v1 on the
+    calibration seeds; the baselines only had a threshold sweep.
+  - Our persistence baseline is one simple design and is weak here:
+    - it approaches every candidate at the 0.3 detection floor
+    - close views inflate decoy scores
+    - three consecutive frames below τ reject a candidate permanently; this rejected 24 of 99
+      real-plant candidates
+
+    Its results do not generalise to temporal-persistence methods.
+  - Idealised setup: the robot's prior occupancy map contains the candidate objects'
+    footprints, and the fixed route was written knowing where the object slots are.
 
 ## Run locally
 
@@ -116,18 +137,85 @@ about 1–2 minutes there.
 ## Reproduce experiments
 
 Seeds:
-- Calibration seeds are 101–110, used only to pick baseline thresholds.
+- Calibration seeds are 101–110. They were used to pick the baseline thresholds and, in
+  calibration v1, to debug SureStop (see `/method`).
 - Evaluation seeds are 1001–1020, held out.
 
+These are the commands that produced the committed data. They were recovered from the build
+session and checked again with a reduced seed list (see `docs/FINAL_AUDIT_REPORT.md`). Each
+batch runs real rendering and inference in headless Chromium against a production server. The
+batch harness `/diagnostics/mission` is only included in a build made with
+`SURESTOP_DIAGNOSTICS=1`.
+
+**Times** on a 4-vCPU container without a GPU (SwiftShader + WASM), with two processes in
+parallel:
+
+| Run | Missions | Time |
+|---|---|---|
+| Calibration v2 | 770 | about 32 min |
+| Evaluation | 560 | about 56 min |
+
+**Setup:**
+
 ```bash
-npm run build && npx next start -p 3100 &
-# calibration sweep of baseline thresholds
-node scripts/missions.mjs http://localhost:3100 "run=1&scenarios=clear-target,poster-decoy,screen-decoy,decoys-only,occluded-target,lookalike-3d&seeds=101,102,103,104,105,106,107,108,109,110&methods=single-frame@0.5,single-frame@0.6,single-frame@0.7,single-frame@0.8,single-frame@0.9,persistence@0.5,persistence@0.6,persistence@0.7,persistence@0.8,surestop,surestop-1view" calib.json
-npm run aggregate -- calibration calib.json public/data/calibration.json
-# held-out evaluation
-node scripts/missions.mjs http://localhost:3100 "run=1&scenarios=…&seeds=1001,…,1020&methods=single-frame,persistence,surestop,surestop-1view" eval.json
-npm run aggregate -- evaluation eval.json public/data/eval-runs.json
+npm ci
+npm run build:diagnostics           # = SURESTOP_DIAGNOSTICS=1 next build
+npx next start -p 3100 &
+mkdir -p repro
 ```
+
+**Calibration v2.** Seeds 101–110, all 7 scenarios, 11 variants: 770 missions.
+
+```bash
+SEEDS=$(seq -s, 101 110)
+V="single-frame@0.5,single-frame@0.6,single-frame@0.7,single-frame@0.8,single-frame@0.9,persistence@0.5,persistence@0.6,persistence@0.7,persistence@0.8,surestop,surestop-1view"
+node scripts/missions.mjs http://localhost:3100 "run=1&scenarios=clear-target,poster-decoy,screen-decoy,decoys-only&seeds=$SEEDS&methods=$V" repro/calib2a.json &
+node scripts/missions.mjs http://localhost:3100 "run=1&scenarios=occluded-target,photo-board-decoy,lookalike-3d&seeds=$SEEDS&methods=$V" repro/calib2b.json &
+wait
+node scripts/merge-batches.mjs repro/calib2.json repro/calib2a.json repro/calib2b.json
+npm run aggregate -- calibration repro/calib2.json repro/calibration.json   # prints the selected τ
+```
+
+**Held-out evaluation.** Seeds 1001–1020, 7 scenarios, 4 methods: 560 missions.
+
+```bash
+SEEDS=$(seq -s, 1001 1020)
+M="single-frame,persistence,surestop-1view,surestop"
+node scripts/missions.mjs http://localhost:3100 "run=1&scenarios=clear-target,poster-decoy,screen-decoy,decoys-only&seeds=$SEEDS&methods=$M" repro/evala.json &
+node scripts/missions.mjs http://localhost:3100 "run=1&scenarios=occluded-target,photo-board-decoy,lookalike-3d&seeds=$SEEDS&methods=$M" repro/evalb.json &
+wait
+node scripts/merge-batches.mjs repro/eval.json repro/evala.json repro/evalb.json
+npm run aggregate -- evaluation repro/eval.json repro/eval-runs.json         # also writes repro/eval-summary.json
+```
+
+**Compare with the committed records.**
+
+```bash
+node scripts/compare-runs.mjs repro/eval-runs.json public/data/eval-runs.json
+node scripts/compare-runs.mjs repro/calib2.json docs/experiments/raw/calib2.json.gz
+```
+
+The script matches runs by scenario, seed and variant. It ignores wall-clock timing (inference
+and load times), which differs on every machine. Everything else must match: every frame,
+detector score, depth measurement, decision and evaluator score.
+
+`result.config` is reported separately. The original calibration records were made before the
+baseline thresholds were selected, so they carry the old default τ for the *other* methods'
+unused settings.
+
+**Reduced-seed check, 2026-10-20.** These exact commands were run from a clean copy with seed
+101 (77 calibration runs) and seed 1001 (28 evaluation runs). All 105 runs matched the records
+apart from timing (see `docs/FINAL_AUDIT_REPORT.md`).
+
+Notes:
+- `npm run aggregate -- report public/data/eval-runs.json docs/RESULTS.md` regenerates the
+  results tables.
+- Writing to `public/data/` would overwrite the committed records, so the commands above write to
+  `repro/` instead.
+- The original raw calibration batches (v1 and v2) are preserved in `docs/experiments/raw/`, with
+  checksums in its `MANIFEST.md`.
+- Repeatability has been checked only on the recorded stack: headless Chromium, SwiftShader,
+  TF.js WASM. Other browsers or GPUs can give slightly different detector scores.
 
 Any single trial can be replayed in Mission Control: `/console?scenario=<id>&seed=<n>&method=<id>`.
 
@@ -167,10 +255,13 @@ docs/             feasibility data, results
 ## Licences and attribution
 
 - 3-D assets are from the Khronos glTF Sample Assets (CC0 / CC-BY-4.0).
-- The detector weights and TF.js are Apache-2.0.
-- Fonts are Geist (SIL OFL).
-- Details are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-- The project's own licence has not been chosen by the team yet.
+- The detector weights, the TF.js WASM binaries and TF.js itself are Apache-2.0.
+- The bundled fonts are Geist (SIL OFL 1.1).
+- Libraries such as three.js, React and Next.js are MIT.
+- Attributions are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md); full licence texts are
+  in [`LICENSES/`](LICENSES/).
+- **The project's own licence has not been chosen yet.** Until the owners choose one, no reuse
+  rights are granted for SureStop's own code.
 
 ## Related work
 

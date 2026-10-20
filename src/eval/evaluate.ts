@@ -1,4 +1,4 @@
-// Independent evaluator. The only module (with the world builder) that reads ground truth.
+// Separate evaluator module. The only module (with the world builder) that reads ground truth.
 // It scores a finished mission after the fact; nothing here feeds back into the robot.
 import type { MissionResult } from "@/mission/types";
 import type { ObjectKind, PlacedObject } from "@/scenarios/layout";

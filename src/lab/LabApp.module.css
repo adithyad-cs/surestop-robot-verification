@@ -91,6 +91,12 @@
   font-size: 11.5px;
   overflow-wrap: anywhere;
 }
+.correction {
+  display: block;
+  margin-top: 4px;
+  color: var(--amber);
+  font-family: var(--font-sans, inherit);
+}
 .empty {
   border: 1px dashed var(--line-strong);
   border-radius: var(--r-panel);

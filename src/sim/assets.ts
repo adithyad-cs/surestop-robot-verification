@@ -15,6 +15,13 @@ export interface AssetSpec {
   source: string;
 }
 
+// Not shipped: the Phase A feasibility study (docs/feasibility, PERCEPTION_FEASIBILITY.md) also
+// rendered SheenWoodLeatherSofa and CommercialRefrigerator, from local copies of the Khronos
+// glTF Sample Assets that were never committed. WaterBottle and DiffuseTransmissionTeacup
+// were downloaded but not used. To re-run those rows, download the models from
+// https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models (CC0 / CC-BY 4.0; see
+// THIRD_PARTY_NOTICES.md) into public/assets/models/ and add entries here.
+
 const KHRONOS = "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models";
 
 export const ASSETS: Record<string, AssetSpec> = {
@@ -68,16 +75,6 @@ export const ASSETS: Record<string, AssetSpec> = {
     attribution: "Eric Chadwick / Wayfair, LLC",
     source: `${KHRONOS}/GlamVelvetSofa`,
   },
-  leatherSofa: {
-    id: "leatherSofa",
-    url: "/assets/models/SheenWoodLeatherSofa.glb",
-    height: 0.93,
-    groundTruthClass: "couch",
-    title: "Sheen Wood Leather Sofa",
-    licence: "CC0-1.0 (original) + CC-BY-4.0 (improvements)",
-    attribution: "Fran Calvente (original, CC0); Eric Chadwick / Darmstadt Graphics Group (CC-BY 4.0)",
-    source: `${KHRONOS}/SheenWoodLeatherSofa`,
-  },
   pouf: {
     id: "pouf",
     url: "/assets/models/SpecularSilkPouf.glb",
@@ -87,35 +84,5 @@ export const ASSETS: Record<string, AssetSpec> = {
     licence: "CC-BY-4.0",
     attribution: "Eric Chadwick / Wayfair, LLC",
     source: `${KHRONOS}/SpecularSilkPouf`,
-  },
-  fridge: {
-    id: "fridge",
-    url: "/assets/models/CommercialRefrigerator.glb",
-    height: 1.9,
-    groundTruthClass: "refrigerator",
-    title: "Commercial Refrigerator",
-    licence: "CC-BY-4.0",
-    attribution: "Sean Thomas (original); Eric Chadwick / Darmstadt Graphics Group",
-    source: `${KHRONOS}/CommercialRefrigerator`,
-  },
-  bottle: {
-    id: "bottle",
-    url: "/assets/models/WaterBottle.glb",
-    height: 0.26,
-    groundTruthClass: "bottle",
-    title: "Water Bottle",
-    licence: "CC0-1.0",
-    attribution: "Microsoft",
-    source: `${KHRONOS}/WaterBottle`,
-  },
-  teacup: {
-    id: "teacup",
-    url: "/assets/models/DiffuseTransmissionTeacup.glb",
-    height: 0.1,
-    groundTruthClass: "cup",
-    title: "Diffuse Transmission Teacup",
-    licence: "CC0-1.0",
-    attribution: "Poly Haven and Eric Chadwick",
-    source: `${KHRONOS}/DiffuseTransmissionTeacup`,
   },
 };

@@ -261,10 +261,13 @@ export default function MethodPage() {
                 candidate (and none supports it). Before, a one-off weak detection could only end UNCONFIRMED.
               </li>
               <li>
-                <b>New scenario <code>photo-board-decoy</code>.</b> v1 showed that our prints and displays never scored above 0.77 while the real plant scored
-                0.90–0.99, so a single-frame threshold of 0.9 separated them perfectly and matched SureStop. Real decoys need not be that weak, so we added a
-                life-size photo board, which the detector scores 0.96–0.99. This scenario was added because of what v1 showed; results are reported both with
-                and without it.
+                <b>New scenario <code>photo-board-decoy</code>.</b> In v1, seen from the search route, our prints and displays never scored above 0.78,
+                while the real plant’s best score per encounter in single-frame runs was 0.87–0.99 (49 of 50 encounters ≥ 0.9). So a single-frame threshold
+                of 0.9 separated them and matched SureStop. Closer views score higher: when the persistence baseline stepped towards them, v1 prints reached
+                0.95 and displays 0.99. Real decoys need not be that weak, so we added a life-size photo board. In a 9-view probe it scored 0.96–0.99 in 5 of
+                6 views within 30° of its normal (<code>docs/feasibility/report-wasm-board.json</code>). In held-out single-frame runs its best score per
+                encounter was 0.87–0.99 (median 0.97). This scenario was added because of what v1 showed; it also moved the selected persistence threshold
+                from 0.6 to 0.8. Results are reported both with and without it.
               </li>
             </ul>
           </section>
@@ -314,7 +317,25 @@ export default function MethodPage() {
               <li>Transparent targets, pictures on curved or relief surfaces, and wall corners can break the flatness cue (the two-plane check mitigates corners).</li>
               <li>Distinct viewpoints are not statistically independent; vote counts are not probabilities.</li>
               <li>Simulation only: one floor layout, scenarios and decoys designed by us, small trial counts; results are preliminary.</li>
-              <li>Navigation uses a prior occupancy map and perfect odometry; no dynamic obstacles or people; no safety claims.</li>
+              <li>
+                <b>Idealised map and route:</b> navigation uses a prior occupancy map and perfect odometry. That map contains the footprints of the candidate
+                objects themselves, and the fixed search route was written knowing where the object slots are. No dynamic obstacles or people; no safety
+                claims.
+              </li>
+              <li>
+                <b>Abstention not validated on held-out seeds:</b> no held-out mission ended UNRESOLVED, so how often SureStop abstains on new seeds is
+                unknown. The path is covered by unit tests and occurred in calibration v1.
+              </li>
+              <li>
+                <b>Weak persistence baseline:</b> it engages every candidate at the {m.detectionFloor} floor, its close approach steps raise decoy scores
+                (prints up to 0.95, displays up to 0.98 in held-out frames), and {m.persistence.maxConsecutiveMisses} consecutive frames below τ reject a
+                candidate permanently (24 of 99 real-plant candidates). It is one simple design; its results do not generalise to persistence methods.
+              </li>
+              <li>
+                <b>Asymmetric effort:</b> SureStop’s planner and decision rules were revised after inspecting calibration v1 on the calibration seeds; the
+                baselines only had a threshold sweep. Ground truth is scored by a separate evaluator module written by the same team, not by an independent
+                party.
+              </li>
               <li>Detector scores may differ slightly across GPUs and browsers; recorded runs list the backend used.</li>
             </ul>
           </section>
@@ -325,7 +346,9 @@ export default function MethodPage() {
               <li>Any trial: open Mission Control with the same scenario, seed and method (the Lab’s “Replay” link fills these in).</li>
               <li>A batch: Verification Lab → Run an experiment; export CSV/JSON.</li>
               <li>
-                Headless: <code>npm run build && npm start</code>, then <code>node scripts/missions.mjs http://localhost:3000 &quot;run=1&amp;scenarios=…&amp;seeds=…&amp;methods=…&quot; out.json</code>.
+                Headless batches: build with the experiment harness enabled (<code>npm run build:diagnostics</code>), start the server, then run{" "}
+                <code>scripts/missions.mjs</code> with an explicit scenario, seed and method list. The exact commands used for calibration v2 and the
+                held-out evaluation are in the README (“Reproduce experiments”) and <code>docs/experiments/raw/MANIFEST.md</code>.
               </li>
             </ul>
           </section>
