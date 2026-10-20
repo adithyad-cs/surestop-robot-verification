@@ -643,3 +643,23 @@ Throughout:
 - deployment
 - a commit SHA in future records
 - the strength of the persistence baseline (would need new experiments, labelled exploratory)
+
+### L.2 Checks after the UI redesign (design changes, separate from remediation)
+
+The redesign touched only UI files:
+- `src/app/*`, `src/console/*`, `src/lab/*` and `src/components/*`
+- `src/eval/recordedSummary.ts` (build-time, read-only)
+- `scripts/poster-data.mjs`
+
+`git diff 27c50ad` shows that, in the pipeline directories (`src/verify`, `src/sensing`,
+`src/policies`, `src/mission`, `src/perception`, `src/nav`, `src/scenarios`,
+`src/experiments`, `src/sim`, `src/lib`) and the model and asset directories, only
+`src/sim/assets.ts` (remediation J-10) changed.
+
+| Check | Result |
+|---|---|
+| Mission Control on the new build vs the `27c50ad` build, same 4 trials | Results identical apart from wall-clock timing in **4/4** |
+| Mission Control replay vs the committed records, same 4 trials | Identical: trajectory, every target-class observation, candidate tracks and evidence, events, outcome, evaluator score. Different: memoisation `cached` flags (run order: the batch harness shares one world across methods) and 2 of 92 detections of non-target classes, in the 4th decimal (e.g. "umbrella" 0.3788 vs 0.3785). The `27c50ad` build shows the same differences, so they predate the redesign. **New observation:** replay through the console is not bit-identical to the batch harness for every detection score. The Method page and README now say so |
+| e2e suite on the final build | 11/11 |
+| axe-core 4.10.2 on all routes at 1440 and 390 px | 0 violations (initial states) |
+| Lab export against the records | 0 mismatches in 8,400 field checks |

@@ -54,7 +54,7 @@ export class SceneView {
   private readonly env: THREE.Texture;
   private raf = 0;
   private userMoved = false;
-  private readonly background = new THREE.Color(0x0e1013);
+  private readonly background = new THREE.Color(0x0b0d10);
   private disposed = false;
   private readonly resizeObs: ResizeObserver;
 
@@ -223,20 +223,57 @@ export class SceneView {
     if (!this.userMoved) this.fitOverview();
   }
 
-  /** Default view: distance chosen so the whole 14 m floor fits the current aspect ratio. */
+  /**
+   * Default view: the shortest camera distance (along a fixed oblique direction) at which the
+   * whole 14 × 10 m floor and the cut-away wall tops project inside the canvas, then the orbit
+   * target is nudged so the room is centred vertically. Fits any aspect ratio without the empty
+   * bands a fixed margin leaves. Overview camera only; the robot's sensor camera is separate.
+   */
   private fitOverview() {
-    const dir = new THREE.Vector3(0, 13.5, 10.5).normalize();
-    const vHalf = (this.camera.fov * Math.PI) / 360;
-    const hHalf = Math.atan(Math.tan(vHalf) * this.camera.aspect);
-    const dist = Math.max(17.1, (7.6 / Math.tan(hHalf)) * 1.05, (5.6 / Math.tan(vHalf)) * 1.2);
-    this.camera.position.copy(dir.multiplyScalar(dist));
-    this.controls.target.set(0, 0, 0);
+    // 62° elevation: steep enough to read paths and viewpoints around candidates, still oblique
+    // enough to see furniture as 3-D.
+    const phi = (62 * Math.PI) / 180;
+    const dir = new THREE.Vector3(0, Math.sin(phi), Math.cos(phi));
+    const pts: THREE.Vector3[] = [];
+    for (const x of [-7, 7]) for (const z of [-5, 5]) for (const y of [0, 2.7 * 0.62]) pts.push(new THREE.Vector3(x, y, z));
+    const cam = this.camera;
+    const target = new THREE.Vector3();
+    const extent = () => {
+      cam.position.copy(target).addScaledVector(dir, dist);
+      cam.lookAt(target);
+      cam.updateMatrixWorld(true);
+      let minY = Infinity, maxY = -Infinity, maxAbs = 0;
+      for (const p of pts) {
+        const v = p.clone().project(cam);
+        minY = Math.min(minY, v.y);
+        maxY = Math.max(maxY, v.y);
+        maxAbs = Math.max(maxAbs, Math.abs(v.x));
+      }
+      return { minY, maxY, maxAbs };
+    };
+    let dist = 20;
+    for (let pass = 0; pass < 3; pass++) {
+      let lo = 4, hi = 80;
+      for (let i = 0; i < 30; i++) {
+        dist = (lo + hi) / 2;
+        const e = extent();
+        if (e.maxAbs <= 0.94 && e.maxY - e.minY <= 1.84 && e.minY >= -0.97 && e.maxY <= 0.97) hi = dist;
+        else lo = dist;
+      }
+      dist = hi;
+      // Re-centre vertically: move the target along the floor's depth axis by the residual offset.
+      const e = extent();
+      const off = (e.maxY + e.minY) / 2;
+      target.z -= off * dist * 0.35;
+    }
+    extent();
+    this.controls.target.copy(target);
     this.controls.update();
   }
 
   private render() {
     if (!this.scene) {
-      this.renderer.setClearColor(0x0e1013, 1);
+      this.renderer.setClearColor(0x0b0d10, 1);
       this.renderer.clear();
       return;
     }

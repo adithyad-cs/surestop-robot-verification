@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AppHeader from "@/components/AppHeader";
 import StatusBadge from "@/components/StatusBadge";
+import ViewpointRose from "@/components/ViewpointRose";
 import { SCENARIOS } from "@/scenarios/layout";
 import { candidateMetrics, groupBy, METRIC_DEFINITIONS, missionMetrics, type Rate } from "@/eval/metrics";
 import { experimentToJson, trialsToCsv } from "@/eval/export";
@@ -130,7 +131,23 @@ export default function LabApp() {
             </button>
           </div>
           <div className="field">
-            <label htmlFor="scen-filter">Scenario</label>
+            <span className="label" id="set-label">
+              Scenario set
+            </span>
+            <div className={styles.tabs} role="radiogroup" aria-labelledby="set-label">
+              {[
+                ["all", "All 7"],
+                ["original", "Original 6"],
+                [POST_HOC_SCENARIO, "Photo board only"],
+              ].map(([v, l]) => (
+                <button key={v} role="radio" aria-checked={scenario === v} className={styles.tab} onClick={() => { setScenario(v); setSelected(null); }}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="field">
+            <label htmlFor="scen-filter">Or one scenario</label>
             <select id="scen-filter" className="select" value={scenario} onChange={(e) => { setScenario(e.target.value); setSelected(null); }}>
               <option value="all">All scenarios</option>
               <option value="original">Original six (excl. post-hoc photo board)</option>
@@ -179,14 +196,19 @@ export default function LabApp() {
                 differs mainly in cost (longer paths, more frames).
               </li>
               <li>
-                The false-arrival gap comes from the life-size photo board, a scenario we added after the first calibration run showed our original decoys scored
-                below the target. Its flat-surface evidence is independent of the detector score; its prevalence in real buildings is not something this
-                simulation can tell you.
+                The false-arrival gap comes from the life-size photo board, a scenario we added after the first calibration run showed that, seen from the
+                search route, our original decoys scored below the target (closer views score higher). Its flat-surface evidence is independent of the
+                detector score; its prevalence in real buildings is not something this simulation can tell you. Use “Scenario set” to compare with and without
+                it.
               </li>
               <li>
                 The vase look-alike is not rejected by depth (it is volumetric). SureStop left it UNCONFIRMED because the detector did not label it consistently
                 from two distinct viewpoints; the one-view ablation shows what happens without that requirement. A consistently detected look-alike would be
                 confirmed.
+              </li>
+              <li>
+                The persistence baseline is one simple design: it approaches every candidate, close views raise decoy scores, and three low-scoring frames
+                reject a candidate for good. Do not read its numbers as representative of persistence methods.
               </li>
               <li>Simulation only, decoys designed by us, 20 held-out seeds per cell: preliminary.</li>
             </ul>
@@ -283,7 +305,7 @@ function Summary({ runs }: { runs: LabRun[] }) {
           {small && " Some groups have fewer than 20 trials: treat as preliminary."}
         </p>
       </div>
-      <div className={styles.tableWrap}>
+      <div className={styles.tableWrap} tabIndex={0} role="region" aria-label="Mission-level comparison table">
         <table className={styles.table}>
           <thead>
             <tr>
@@ -317,7 +339,10 @@ function Summary({ runs }: { runs: LabRun[] }) {
           </tbody>
         </table>
       </div>
-      <IntervalPlot rows={rows.map((r) => ({ label: labelFor(r.variant), far: r.m.falseArrivalRate, comp: r.m.completionRate }))} />
+      <div className={styles.plots}>
+        <IntervalPlot rows={rows.map((r) => ({ label: labelFor(r.variant), far: r.m.falseArrivalRate, comp: r.m.completionRate }))} />
+        <PathPlot rows={byVariant.map(([variant, rs]) => ({ label: labelFor(variant), paths: rs.map((r) => r.score.pathLength) }))} />
+      </div>
       <details className={styles.defs}>
         <summary>Metric definitions and candidate-level counts</summary>
         <ul>
@@ -327,7 +352,7 @@ function Summary({ runs }: { runs: LabRun[] }) {
             </li>
           ))}
         </ul>
-        <div className={styles.tableWrap}>
+        <div className={styles.tableWrap} tabIndex={0} role="region" aria-label="Candidate-level outcomes by ground-truth kind">
           <table className={styles.table}>
             <caption className={styles.note}>Candidate level: one encounter = one candidate track (verification episode), not one frame.</caption>
             <thead>
@@ -396,7 +421,7 @@ function IntervalPlot({ rows }: { rows: Array<{ label: string; far: Rate; comp: 
   const h = rows.length * rowH + 44;
   const x = (v: number) => left + v * plotW;
   return (
-    <figure className={styles.plot}>
+    <figure className={styles.plot} tabIndex={0} aria-label="Interval plot of false-arrival and completion rates (scrolls horizontally on small screens)">
       <figcaption className={styles.note}>
         Mission-level rates with 95% Wilson intervals. <span className={styles.keyFar}>■</span> false-arrival rate (lower is better) ·{" "}
         <span className={styles.keyComp}>■</span> completion rate (higher is better). n = denominator shown at right.
@@ -437,6 +462,63 @@ function IntervalPlot({ rows }: { rows: Array<{ label: string; far: Rate; comp: 
   );
 }
 
+/** Per-trial path length by method: median (dot), interquartile range (bar) and full range (thin line). Descriptive only. */
+function PathPlot({ rows }: { rows: Array<{ label: string; paths: number[] }> }) {
+  const rowH = 30;
+  const left = 230;
+  const width = 860;
+  const plotW = width - left - 116;
+  const h = rows.length * rowH + 44;
+  const all = rows.flatMap((r) => r.paths);
+  const max = Math.max(10, Math.ceil(Math.max(...all, 0) / 10) * 10);
+  const x = (v: number) => left + (v / max) * plotW;
+  const q = (s: number[], p: number) => {
+    const i = (s.length - 1) * p;
+    const lo = Math.floor(i);
+    return s[lo] + (s[Math.min(s.length - 1, lo + 1)] - s[lo]) * (i - lo);
+  };
+  const ticks = Array.from({ length: max / 10 + 1 }, (_, i) => i * 10);
+  return (
+    <figure className={styles.plot} tabIndex={0} aria-label="Path length plot (scrolls horizontally on small screens)">
+      <figcaption className={styles.note}>
+        Cost: path driven per trial (m). <span className={styles.keyPath}>●</span> median · thick bar 25–75th percentile · thin line full range. Descriptive
+        statistics of the same trials; no interval estimate.
+      </figcaption>
+      <svg viewBox={`0 0 ${width} ${h}`} role="img" aria-label="Path length per trial by method: median, interquartile range and full range">
+        {ticks.map((t) => (
+          <g key={t}>
+            <line x1={x(t)} x2={x(t)} y1={10} y2={h - 26} className={styles.grid} />
+            <text x={x(t)} y={h - 10} textAnchor="middle" className={styles.axis}>
+              {t} m
+            </text>
+          </g>
+        ))}
+        {rows.map((r, i) => {
+          const y = 22 + i * rowH;
+          const s = [...r.paths].sort((a, b) => a - b);
+          if (!s.length) return null;
+          const med = q(s, 0.5);
+          return (
+            <g key={r.label}>
+              <text x={left - 10} y={y + 4} textAnchor="end" className={styles.rowLabel}>
+                {r.label}
+              </text>
+              <g className={styles.pathMark}>
+                <line x1={x(s[0])} x2={x(s[s.length - 1])} y1={y} y2={y} strokeWidth={1} />
+                <line x1={x(q(s, 0.25))} x2={x(q(s, 0.75))} y1={y} y2={y} strokeWidth={5} />
+                <circle cx={x(med)} cy={y} r={4.5} />
+              </g>
+              <text x={width - 4} y={y + 4} textAnchor="end" className={styles.axis}>
+                median {med.toFixed(1)} · n={s.length}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    </figure>
+  );
+}
+
 function verdictOf(r: LabRun): string {
   const s = r.score;
   if (s.correctArrival) return "correct arrival";
@@ -457,7 +539,7 @@ function TrialTable({ runs, selected, onSelect }: { runs: LabRun[]; selected: nu
           <input type="checkbox" checked={onlyFailures} onChange={(e) => setOnlyFailures(e.target.checked)} /> Show only trials without the correct terminal outcome
         </label>
       </div>
-      <div className={`${styles.tableWrap} ${styles.trials}`}>
+      <div className={`${styles.tableWrap} ${styles.trials}`} tabIndex={0} role="region" aria-label="Trials table (scrolls)">
         <table className={styles.table}>
           <thead>
             <tr>
@@ -564,7 +646,10 @@ function TrialDetail({ run, onClose }: { run: RunRecord; onClose: () => void }) 
               <p>
                 <strong className="mono">{t.id}</strong> <StatusBadge status={t.status} /> {t.decision.reason}
               </p>
-              <div className={styles.tableWrap}>
+              {r.method.startsWith("surestop") && t.evidence.length > 0 && (
+                <ViewpointRose id={t.id} status={t.status} views={t.evidence} size={200} />
+              )}
+              <div className={styles.tableWrap} tabIndex={0} role="region" aria-label={`Evidence table for candidate ${t.id}`}>
                 <table className={styles.table}>
                   <thead>
                     <tr>
@@ -749,7 +834,7 @@ function Calibration() {
           Seeds {cal.seeds[0]}–{cal.seeds[cal.seeds.length - 1]} (disjoint from the evaluation seeds). {cal.rule}
         </p>
       </div>
-      <div className={styles.tableWrap}>
+      <div className={styles.tableWrap} tabIndex={0} role="region" aria-label="Baseline threshold calibration table">
         <table className={styles.table}>
           <thead>
             <tr>

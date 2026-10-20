@@ -3,9 +3,11 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import AppHeader from "@/components/AppHeader";
 import StatusBadge from "@/components/StatusBadge";
+import ViewpointRose from "@/components/ViewpointRose";
 import { SCENARIOS } from "@/scenarios/layout";
 import { METHOD_LABELS, type MethodId } from "@/policies/types";
 import { ConsoleController, type ConsoleState, type FrameView, type Speed } from "./controller";
+import FrameScrubber from "./FrameScrubber";
 import styles from "./ConsoleApp.module.css";
 
 const METHODS: MethodId[] = ["surestop", "single-frame", "persistence", "surestop-1view"];
@@ -36,6 +38,7 @@ export default function ConsoleApp() {
     <>
       <AppHeader status={<DetectorStatus ctl={ctl} />} />
       <main className={styles.grid}>
+        <h1 className="visually-hidden">Mission Control</h1>
         <section className={styles.scene} aria-label="3-D simulation view">
           <div ref={sceneRef} className={styles.sceneCanvas} />
           <SceneOverlay ctl={ctl} />
@@ -103,12 +106,23 @@ function Panels({ ctl }: { ctl: ConsoleController }) {
       <aside className={styles.left} aria-label="Mission setup and decision">
         <Setup ctl={ctl} s={s} />
         <MissionStatus s={s} />
-        <Candidates ctl={ctl} s={s} />
+        <Candidates ctl={ctl} s={s} frame={frame} />
         {s.phase === "done" && <Evaluator ctl={ctl} s={s} />}
       </aside>
       <aside className={styles.right} aria-label="Robot camera and evidence">
-        <CameraPanel s={s} frame={frame} ctl={ctl} />
+        <CameraPanel frame={frame} />
       </aside>
+      <section className={styles.scrub} aria-label="Frame timeline">
+        <FrameScrubber
+          frames={s.frameViews}
+          events={s.events}
+          selectedFrameId={frame?.frameId ?? null}
+          followLive={s.followLive}
+          running={s.phase === "running" || s.phase === "paused"}
+          onSelect={(frameId) => ctl.select({ frameId })}
+          onFollow={() => ctl.followLatest()}
+        />
+      </section>
       <section className={styles.timeline} aria-label="Event timeline">
         <Timeline ctl={ctl} s={s} />
       </section>
@@ -270,8 +284,11 @@ function MissionStatus({ s }: { s: ConsoleState }) {
   );
 }
 
-function Candidates({ ctl, s }: { ctl: ConsoleController; s: ConsoleState }) {
-  const sel = s.tracks.find((t) => t.id === s.selectedTrackId) ?? null;
+function Candidates({ ctl, s, frame }: { ctl: ConsoleController; s: ConsoleState; frame: FrameView | null }) {
+  // Show the explicitly selected candidate; otherwise the one the current frame is about, else
+  // the most recently opened. Only an explicit choice marks a row as pressed.
+  const focusId = frame?.focusTrackId ?? frame?.targets.find((t) => t.trackId)?.trackId ?? null;
+  const shown = s.tracks.find((t) => t.id === s.selectedTrackId) ?? s.tracks.find((t) => t.id === focusId) ?? s.tracks[s.tracks.length - 1] ?? null;
   return (
     <div className={styles.block}>
       <h2 className={styles.blockTitle}>
@@ -283,55 +300,71 @@ function Candidates({ ctl, s }: { ctl: ConsoleController; s: ConsoleState }) {
         <ul className={styles.candList}>
           {s.tracks.map((t) => (
             <li key={t.id}>
-              <button className={styles.cand} aria-pressed={t.id === s.selectedTrackId} onClick={() => ctl.select({ trackId: t.id === s.selectedTrackId ? null : t.id })}>
-                <span className={styles.candHead}>
-                  <span className="mono">{t.id}</span>
-                  <StatusBadge status={t.status} />
-                  <span className={`mono ${styles.muted}`}>
-                    {t.decision.distinctViews} view{t.decision.distinctViews === 1 ? "" : "s"}
-                  </span>
+              <button
+                className={styles.cand}
+                aria-pressed={t.id === s.selectedTrackId}
+                data-shown={t.id === shown?.id}
+                onClick={() => ctl.select({ trackId: t.id === s.selectedTrackId ? null : t.id })}
+              >
+                <span className="mono">{t.id}</span>
+                <StatusBadge status={t.status} />
+                <span className={`mono ${styles.muted}`}>
+                  {t.decision.distinctViews} view{t.decision.distinctViews === 1 ? "" : "s"}
                 </span>
-                <span className={styles.candReason}>{t.decision.reason}</span>
               </button>
             </li>
           ))}
         </ul>
       )}
-      {sel && (
-        <div className={styles.tableWrap}>
-          <table className={styles.table}>
-            <caption className="visually-hidden">Evidence for candidate {sel.id}</caption>
-            <thead>
-              <tr>
-                <th scope="col">Frame</th>
-                <th scope="col">Cell</th>
-                <th scope="col">Range</th>
-                <th scope="col">Score</th>
-                <th scope="col">Relief</th>
-                <th scope="col">Verdict</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sel.evidence.map((e, i) => (
-                <tr key={i} data-counted={e.counted} title={`${e.reason}${e.note ? ` — ${e.note}` : ""}`}>
-                  <td>
-                    <button className={styles.linkBtn} onClick={() => ctl.select({ frameId: e.frameId })}>
-                      #{e.frameId}
-                    </button>
-                  </td>
-                  <td>{e.cell}</td>
-                  <td>{e.range.toFixed(2)}</td>
-                  <td>{e.score === null ? "miss" : e.score.toFixed(2)}</td>
-                  <td>{e.excessRelief === null ? "—" : `${Math.round(e.excessRelief * 1000)} mm`}</td>
-                  <td>
-                    {e.verdict}
-                    {!e.counted && <span className={styles.muted}> (not counted)</span>}
-                  </td>
+      {shown && (
+        <div className={styles.evidence}>
+          <p className={styles.evidenceReason}>
+            <b className="mono">{shown.id}</b> {shown.decision.reason}
+          </p>
+          {shown.evidence.length > 0 && (
+            <ViewpointRose
+              id={shown.id}
+              status={shown.status}
+              views={shown.evidence.map((e) => ({ ...e }))}
+              selectedFrameId={frame?.frameId ?? null}
+              size={196}
+            />
+          )}
+          <div className={styles.tableWrap} tabIndex={0} role="region" aria-label={`Evidence table for candidate ${shown.id}`}>
+            <table className={styles.table}>
+              <caption className="visually-hidden">Evidence for candidate {shown.id}</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Frame</th>
+                  <th scope="col">Range</th>
+                  <th scope="col">Score</th>
+                  <th scope="col">Relief</th>
+                  <th scope="col">Verdict</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-          <p className={styles.help}>One vote per viewpoint cell (0.75 m × 30° around the candidate). Hover a row for the full reason.</p>
+              </thead>
+              <tbody>
+                {shown.evidence.map((e, i) => (
+                  <tr key={i} data-counted={e.counted} data-current={e.frameId === frame?.frameId} title={`${e.reason}${e.note ? ` — ${e.note}` : ""}`}>
+                    <td>
+                      <button className={styles.linkBtn} onClick={() => ctl.select({ frameId: e.frameId })} aria-label={`Show frame ${e.frameId}`}>
+                        #{e.frameId}
+                      </button>
+                    </td>
+                    <td className="mono" title={`bearing ${Math.round(e.bearingDeg)}° from the candidate`}>
+                      {e.range.toFixed(2)}
+                    </td>
+                    <td className="mono">{e.score === null ? "miss" : e.score.toFixed(2)}</td>
+                    <td className="mono">{e.excessRelief === null ? "—" : `${Math.round(e.excessRelief * 1000)} mm`}</td>
+                    <td className={styles.verdictCell} data-verdict={e.verdict}>
+                      {e.verdict === "INCONCLUSIVE" && e.score === null ? "not re-detected" : e.verdict.toLowerCase()}
+                      {!e.counted && <span className={styles.muted}> (not counted)</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className={styles.help}>One vote per viewpoint cell (0.75 m × 30° around the candidate). Select a frame number to see that view.</p>
         </div>
       )}
     </div>
@@ -366,26 +399,13 @@ function Evaluator({ ctl, s }: { ctl: ConsoleController; s: ConsoleState }) {
   );
 }
 
-function CameraPanel({ s, frame, ctl }: { s: ConsoleState; frame: FrameView | null; ctl: ConsoleController }) {
-  const idx = frame ? s.frameViews.findIndex((f) => f.frameId === frame.frameId) : -1;
-  const go = (d: number) => {
-    const f = s.frameViews[idx + d];
-    if (f) ctl.select({ frameId: f.frameId });
-  };
+function CameraPanel({ frame }: { frame: FrameView | null }) {
   return (
     <>
       <div className={styles.block}>
         <div className={styles.camHead}>
           <h2 className={styles.blockTitle}>Robot camera</h2>
-          <div className={styles.frameNav}>
-            <button className="btn" aria-label="Previous frame" disabled={idx <= 0} onClick={() => go(-1)}>
-              ‹
-            </button>
-            <span className="mono">{frame ? `#${frame.frameId}` : "—"}</span>
-            <button className="btn" aria-label="Next frame" disabled={idx < 0 || idx >= s.frameViews.length - 1} onClick={() => go(1)}>
-              ›
-            </button>
-          </div>
+          <span className={`mono ${styles.muted}`}>{frame ? `#${frame.frameId} · t ${frame.t.toFixed(1)} s` : "—"}</span>
         </div>
         <span className="provenance prov-model">Model prediction · COCO-SSD on these pixels</span>
         <div className={styles.cam}>

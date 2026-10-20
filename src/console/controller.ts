@@ -56,6 +56,8 @@ export interface ConsoleState {
   events: MissionEvent[];
   frameViews: FrameView[];
   selectedFrameId: number | null;
+  /** Panels follow the newest frame until the user picks an earlier one (UI state only). */
+  followLive: boolean;
   selectedTrackId: string | null;
   result: MissionResult | null;
   score: TrialScore | null;
@@ -97,6 +99,7 @@ export class ConsoleController {
       events: [],
       frameViews: [],
       selectedFrameId: null,
+      followLive: true,
       selectedTrackId: null,
       result: null,
       score: null,
@@ -185,6 +188,7 @@ export class ConsoleController {
       events: [],
       frameViews: [],
       selectedFrameId: null,
+      followLive: true,
       selectedTrackId: null,
       result: null,
       score: null,
@@ -247,10 +251,20 @@ export class ConsoleController {
 
   select(patch: { frameId?: number | null; trackId?: string | null }) {
     const p: Partial<ConsoleState> = {};
-    if (patch.frameId !== undefined) p.selectedFrameId = patch.frameId;
+    if (patch.frameId !== undefined) {
+      const latest = this.state.frameViews[this.state.frameViews.length - 1]?.frameId ?? null;
+      p.selectedFrameId = patch.frameId;
+      p.followLive = patch.frameId === null || patch.frameId === latest;
+    }
     if (patch.trackId !== undefined) p.selectedTrackId = patch.trackId;
     this.set(p);
     this.refreshMarkers();
+  }
+
+  /** Return the camera, depth and evidence panels to the newest frame. */
+  followLatest() {
+    const latest = this.state.frameViews[this.state.frameViews.length - 1]?.frameId ?? null;
+    this.set({ followLive: true, selectedFrameId: latest });
   }
 
   toggleGroundTruth(on: boolean) {
@@ -341,7 +355,7 @@ export class ConsoleController {
       tracks: r.tracks,
       events: r.events,
       frameViews,
-      selectedFrameId: s.frame ? s.frame.frameId : this.state.selectedFrameId,
+      selectedFrameId: s.frame && this.state.followLive ? s.frame.frameId : this.state.selectedFrameId,
     });
     this.refreshMarkers();
   }

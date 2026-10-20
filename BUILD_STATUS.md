@@ -1,71 +1,93 @@
 # Build status
 
-_Last updated 2026-10-19. Phases A–F are done. Phase G (deployment) is blocked: there are no
-Vercel credentials in this environment._
+**Updated:** 2026-10-20.
+**Branch:** `feature/surestop-prototype`. `main` is untouched.
+**Done:** phases A–F, the final audit (2026-10-19), audit remediation and the UI redesign
+(2026-10-20).
+**Not done:** deployment. There are no Vercel credentials in this environment.
 
 ## Implemented
-- **Phase A, perception (Gate 1 passed).** COCO-SSD 2.2.3 runs on real Three.js renders, with
-  a pixel-aligned depth pass and a noise model. Report: `PERCEPTION_FEASIBILITY.md`.
-- **Phase B, verification engine:**
-  - per-view evidence (relief above noise, two-plane RANSAC)
-  - viewpoint-cell deduplication
-  - SureStop verifier: CONFIRMED, REJECTED (flat or not reproducible) and UNCONFIRMED
-  - bounded re-observation planner
-  - baselines: single-frame and persistence (K of N)
-- **Phase C, end-to-end mission:**
-  - seven seeded scenarios
-  - world builder with a label-free occupancy map
-  - A* navigation
-  - browser RGB-D sensor with real inference and WASM/WebGL auto-selection
-  - mission runner with candidate- and mission-level event logs
-  - evaluator, the only robot-adjacent code that reads ground truth
-- **Phase D, experiments:**
-  - calibration v1 (660 missions, superseded)
-  - calibration v2 (770 missions)
-  - held-out evaluation (560 missions, seeds 1001–1020)
-  - generated `docs/RESULTS.md`
-  - Lab data: `public/data/eval-summary.json` (0.65 MB, loaded first) and
-    `public/data/eval-runs.json` (10.9 MB, fetched on demand)
-- **Phase E, UI:**
-  - `/`: real mission frames, one ENTER SYSTEM action
-  - `/console`: Mission Control
-  - `/lab`: Verification Lab
-  - `/method`
-  - design brief: `UI_DESIGN_BRIEF.md`
 
-## Commands actually run (latest results)
-| Command | Result |
+**Perception (Gate 1 passed).**
+- COCO-SSD 2.2.3 runs on real Three.js renders, with a pixel-aligned depth pass and a noise model.
+- Report: `PERCEPTION_FEASIBILITY.md`; raw outputs: `docs/feasibility/`.
+
+**Verification engine.**
+- Per-view evidence: relief above noise, plus a two-plane check.
+- Viewpoint cells: one vote per 0.75 m × 30° cell.
+- Outcomes: CONFIRMED, REJECTED (flat, or not reproducible) and UNCONFIRMED.
+- A bounded re-observation planner.
+- Single-frame and persistence baselines.
+
+**Mission.**
+- Seven seeded scenarios, A* navigation and a browser RGB-D sensor with real inference.
+- A separate evaluator module scores each mission.
+
+**Experiments.**
+- Calibration v1: 660 missions.
+- Calibration v2: 770 missions. The raw batches for both runs are preserved byte for byte in
+  `docs/experiments/raw/`.
+- Held-out evaluation: 560 missions, seeds 1001–1020, in `public/data/eval-runs.json`.
+
+**UI (redesigned 2026-10-20).** The research and decision record is in `docs/UI_RESEARCH.md`,
+`docs/UI_DESIGN_BRIEF.md` and `docs/VISUAL_QA.md`.
+- `/`: an evidence "motion poster" built from one recorded mission.
+  - A camera/depth comparison with one restrained sweep.
+  - Route draw-on.
+  - Viewpoint roses.
+  - The whole recorded set with denominators and path cost.
+- `/console`: a frame scrubber drives the camera, depth, verifier and candidate evidence; each
+  candidate gets a viewpoint rose and a per-view table; reframed overview camera.
+- `/lab`: scenario-set control (All 7 / Original 6 / Photo board only); a path-cost plot; roses in
+  trial traces; the dated protocol correction next to the recorded text.
+- `/method`: results computed at build time, a chronology, a worked rose example, and the
+  limitations added during remediation.
+- `/diagnostics/*` returns 404 unless the app is built with `npm run build:diagnostics`.
+
+## Checks run on the final build (2026-10-20)
+
+| Command or check | Result |
 |---|---|
-| `npx tsc --noEmit` | pass |
 | `npx eslint .` | pass |
-| `npx vitest run` | pass: 67 tests in 6 files |
-| `npx next build` | pass |
-| `npx playwright test` against the production build | **11/11 pass** (2.8 min): routes and refresh, keyboard ENTER SYSTEM, a real mission end to end, reduced motion, Lab export and inspect, live Lab batch, no overflow at 1024 and 390 px |
-| Clean `npm ci` from the lockfile | pass (418 packages) |
-| `npm audit --omit=dev` | 0 vulnerabilities (5 high in the dev-only ESLint chain via `braces`; the only fix is a breaking downgrade, not applied) |
-| Visual review of `/`, `/console`, `/lab`, `/method` at 1440, 1024 and 390 px | done; defects fixed (cut-away walls, mobile camera fit, label sizes, plot label overlap, tab wrapping) |
+| `npx tsc --noEmit` | pass |
+| `npx vitest run` | 67/67 pass |
+| `npm run build` | pass (8 static routes; `/diagnostics/*` → 404) |
+| `npx playwright test` against the production build | 11/11 pass (2.7 min); test assertions unchanged |
+| axe-core 4.10.2, WCAG 2.0/2.1 A and AA plus best practice | 0 violations on `/`, `/console`, `/lab` and `/method` at 1440 and 390 px (initial states) |
+| Horizontal overflow at 1440, 1024, 390 and 360 px | 0 px on all routes |
+| Error states | No WebGL → "Unsupported browser"; blocked weights → "Something failed: Failed to fetch"; missing Lab data → message. Run is disabled in each case |
+| Lab CSV/JSON export against the records | 560 rows, 8,400 field checks, 0 mismatches |
+| Mission Control replay versus records (4 trials) | Trajectory, target-class observations, decisions and evaluator score identical. 2 of 92 other-class detections differ in the 4th decimal. The pre-redesign build is identical to the new one in all 4 |
+| README reproduction commands, reduced seeds, clean copy | 77/77 calibration and 28/28 evaluation runs identical to the records apart from wall-clock timing |
+| `public/data/*.json` | byte-identical to the audited files (SHA-256) |
 
-## Headline results (held-out seeds; see `docs/RESULTS.md`)
-- SureStop: false-arrival rate **0/85**; correct confirmation **120/120**; completion
-  **140/140**; mean path 36.2 m.
-- Tuned single-frame (τ = 0.9): 16/85, 101/120, 121/140; path 23.7 m.
-- On the original six scenarios the tuned single-frame threshold also had **0/65** false
-  arrivals. The gap comes from the post-hoc `photo-board-decoy` scenario.
-- The vase look-alike ended UNCONFIRMED through view inconsistency, not depth.
+## Headline results (held-out; see `docs/RESULTS.md`)
+
+| | All 7 scenarios | Original 6 scenarios |
+|---|---|---|
+| SureStop false arrivals | 0/85 | 0/65 |
+| Tuned single-frame (τ = 0.9) false arrivals | 16/85 | 0/65 |
+| SureStop completion | 140/140 | — |
+| Mean path, SureStop vs single-frame | 36.2 m vs 23.7 m | — |
+
+All 16 single-frame false arrivals occur on `photo-board-decoy`, which was added after
+calibration v1.
 
 ## Known limitations
-- Category-level task only; COCO-SSD cannot identify instances.
-- Depth cannot reject a 3-D look-alike that is consistently detected.
-- Simulation only:
-  - decoys and scenarios designed by us
-  - 20 trials per cell
-  - SureStop was debugged on calibration seeds
-  - the photo board was added after calibration v1
-- Software WebGL in this container. Experiments used WASM inference; GPU timings were not
-  measured.
-- No deployment and no public URL verified.
 
-## Remaining (user actions)
-- Merge `feature/surestop-prototype` into `main`, so the default branch shows this work.
-- Import the repo into Vercel (steps in the README), then smoke-test the deployed URL.
-- Choose a project licence.
+- Category-level task only; COCO-SSD does not identify instances.
+- Depth cannot reject a consistently detected 3-D look-alike.
+- Simulation only: our own decoys and layout, 20 seeds per cell.
+- SureStop was debugged on calibration seeds.
+- The persistence baseline is weak by design.
+- The map prior contains the candidates; the route was written knowing the object slots.
+- Mission-level abstention was never observed on held-out seeds.
+- Software WebGL only. Experiments used WASM; GPU timings were not measured.
+- `/console` downloads about 41 MB on a cold load (weights and GLB assets used by the
+  experiments).
+
+## Waiting on the owners
+
+- Choose a project licence. None is set; see `THIRD_PARTY_NOTICES.md`.
+- Approve merging `feature/surestop-prototype` into `main`.
+- Approve deployment: import into Vercel (steps in the README), then smoke-test the URL.

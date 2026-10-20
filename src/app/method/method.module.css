@@ -93,7 +93,7 @@
   white-space: nowrap;
 }
 .table thead th {
-  font-size: 11px;
+  font-size: 11.5px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   background: var(--panel-2);
@@ -160,4 +160,105 @@
     grid-template-columns: minmax(0, 1fr);
     gap: 4px;
   }
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+.chrono {
+  list-style: none;
+  margin: 0 0 var(--s3);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 2px solid var(--line-strong);
+}
+.chrono li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 2px var(--s3);
+  padding: 8px 0 8px var(--s4);
+}
+.chrono li::before {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: 13px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--bg);
+  border: 2px solid var(--muted);
+}
+.chrono li[data-kind="change"]::before {
+  border-color: var(--amber);
+}
+.chrono li[data-kind="data"]::before {
+  border-color: var(--cyan);
+  background: var(--cyan);
+}
+.chrono li[data-kind="audit"]::before {
+  border-color: var(--green);
+}
+.chronoWhen {
+  grid-row: span 2;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+  padding-top: 2px;
+}
+.chronoWhat {
+  font-weight: 600;
+  font-size: 14px;
+}
+.chronoDetail {
+  font-size: 13.5px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.roseFig {
+  margin: var(--s3) 0;
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: var(--s4);
+  align-items: center;
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-panel);
+  background: var(--panel);
+}
+.roseFig figcaption {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.roseFig figcaption b {
+  color: var(--text);
+}
+@media (max-width: 640px) {
+  .chrono li {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .chronoWhen {
+    grid-row: auto;
+  }
+  .roseFig {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.nowrap th,
+.nowrap td {
+  white-space: nowrap;
+}
+
+.groupHead {
+  text-align: center !important;
+  border-bottom: 1px solid var(--line) !important;
+}
+.nowrap th,
+.nowrap td {
+  padding-left: 8px;
+  padding-right: 8px;
 }

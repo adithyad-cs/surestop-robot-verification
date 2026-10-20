@@ -8,17 +8,38 @@ import { DEFAULT_DEPTH_NOISE } from "@/sensing/depthFeatures";
 import { METRIC_DEFINITIONS } from "@/eval/metrics";
 import { SCENARIOS } from "@/scenarios/layout";
 import { EVAL_SEEDS, CALIBRATION_SEEDS } from "@/experiments/protocol";
+import { recordedSummary } from "@/eval/recordedSummary";
+import type { Rate } from "@/eval/metrics";
+import ViewpointRose from "@/components/ViewpointRose";
+import type { ViewVerdict } from "@/verify/types";
+import run from "../poster-run.json";
 import styles from "./method.module.css";
 
 export const metadata = { title: "Method" };
 
 const mm = (m: number) => `${Math.round(m * 1000)} mm`;
+const rateText = (r: Rate) => (r.value === null ? "—" : `${Math.round(r.value * 100)}% (${r.num}/${r.den})`);
+const ciText = (r: Rate) => (r.ci95 ? `${Math.round(r.ci95[0] * 100)}–${Math.round(r.ci95[1] * 100)}%` : "—");
+
+// Chronology from Git commit times (UTC, 2026-10-19) and the raw record files; see
+// docs/experiments/raw/MANIFEST.md and docs/FINAL_AUDIT_REPORT.md section E.
+const CHRONOLOGY: Array<{ when: string; what: string; detail: string; kind?: "change" | "data" | "audit" }> = [
+  { when: "14:15 · 1994d8d", what: "Phase A feasibility and verifier core", detail: "Evidence gates (60 mm volumetric, 25 mm flat, 30 mm noise, score 0.4) set from feasibility renders; unchanged since." },
+  { when: "14:32 · cac2b54", what: "End-to-end mission", detail: "Developed on seeds outside both experiment sets (surviving logs show 1, 2, 3 and 5): planner rings 1.4/1.9 → 1.6/2.0 m, bin-centre bearings.", kind: "change" },
+  { when: "15:12 · build 2c5200c", what: "Calibration v1", detail: "660 missions, seeds 101–110, six scenarios. Used to pick τ and to debug SureStop.", kind: "data" },
+  { when: "15:18 · 7c1f2a4", what: "Changes after v1", detail: "Rings 1.9/2.2 m, confirm range 2.5 m, ‘not reproducible’ rejection rule, new photo-board-decoy scenario.", kind: "change" },
+  { when: "15:50 · 15:51 e37e6d7", what: "Calibration v2 and thresholds", detail: "770 missions, all seven scenarios → single-frame τ 0.9, persistence τ 0.8 (v1 had picked 0.6).", kind: "data" },
+  { when: "16:48", what: "Held-out evaluation", detail: "560 missions, seeds 1001–1020; robot code identical to e37e6d7. These are the results above.", kind: "data" },
+  { when: "evening · next day", what: "Final audit and remediation", detail: "All published numbers recomputed from the records; wording and provenance corrected; records unchanged.", kind: "audit" },
+];
 
 export default function MethodPage() {
   const e = DEFAULT_EVIDENCE;
   const s = DEFAULT_SURESTOP;
   const p = DEFAULT_PLANNER;
   const m = DEFAULT_MISSION;
+  const summary = recordedSummary();
+  const c1 = run.tracks.find((t) => t.id === "C1")!;
   return (
     <>
       <AppHeader />
@@ -29,7 +50,8 @@ export default function MethodPage() {
           <a href="#verify">Verification policy</a>
           <a href="#baselines">Baselines</a>
           <a href="#protocol">Protocol &amp; metrics</a>
-          <a href="#changes">Post-calibration changes</a>
+          <a href="#results">Results</a>
+          <a href="#changes">Chronology &amp; changes</a>
           <a href="#sensing">Sensing model</a>
           <a href="#prior">Prior work</a>
           <a href="#limits">Limitations</a>
@@ -92,8 +114,10 @@ export default function MethodPage() {
               </div>
             </div>
             <p>
-              Everything runs in the browser; there is no server-side inference. Perception results are memoised per exact camera pose within a run, so
-              methods that pass through the same pose see identical frames (renders and inference are deterministic on a given browser and backend).
+              Everything runs in the browser; there is no server-side inference. Perception results are memoised per exact camera pose within a page, so
+              methods that pass through the same pose see identical frames. Replaying a recorded trial in Mission Control (four trials checked) reproduced
+              its trajectory, every target-class observation, every candidate decision and the evaluator score; 2 of 92 detections of <em>other</em>{" "}
+              classes differed in the fourth decimal, and the same happened with the build that produced the records.
             </p>
           </section>
 
@@ -162,6 +186,15 @@ export default function MethodPage() {
                 A terminal candidate decision is final: later observations are logged but cannot change it.
               </li>
             </ul>
+            <figure className={styles.roseFig}>
+              <ViewpointRose id={c1.id} status="REJECTED" views={c1.evidence.map((e) => ({ ...e, verdict: e.verdict as ViewVerdict }))} size={220} />
+              <figcaption>
+                <b>Reading a viewpoint rose.</b> Recorded example ({run.provenance.run.scenarioId}, seed {run.provenance.run.seed}, SureStop): candidate C1
+                seen from {c1.evidence.length} viewpoints. Each mark sits at the robot’s bearing and range as seen from the candidate, on the verifier’s own cell
+                grid ({DEFAULT_CELL.rangeBin} m × {DEFAULT_CELL.bearingBinDeg}°). Two cells voted FLAT, two planned viewpoints did not re-detect it, and one
+                far view was inconclusive, so C1 was REJECTED: {c1.reason}.
+              </figcaption>
+            </figure>
             <h3>Bounded re-observation</h3>
             <p>
               Candidate viewpoints lie on rings of {p.ranges.join(" and ")} m around the candidate at the centres of {p.bearingStepDeg}° bearing bins. A
@@ -245,8 +278,72 @@ export default function MethodPage() {
             </ul>
           </section>
 
+          <section id="results">
+            <h2>Results (recorded held-out evaluation)</h2>
+            <p className={styles.note}>
+              Computed when this page was built from <code>public/data/eval-summary.json</code> ({summary.trials} missions, seeds {summary.seeds}, recorded{" "}
+              {summary.generatedAt.slice(0, 10)}), with the same metric code the Lab uses. Rates show numerator/denominator; intervals are 95% Wilson.
+            </p>
+            <div className={styles.tableWrap} tabIndex={0} role="region" aria-label="Recorded results by method (scrolls horizontally on small screens)">
+              <table className={`${styles.table} ${styles.nowrap}`}>
+                <thead>
+                  <tr>
+                    <th scope="col" rowSpan={2}>
+                      Method
+                    </th>
+                    <th scope="colgroup" colSpan={4} className={styles.groupHead}>
+                      False arrivals
+                    </th>
+                    <th scope="col" rowSpan={2}>
+                      Completion, all 7
+                    </th>
+                    <th scope="col" rowSpan={2}>
+                      Mean path
+                    </th>
+                  </tr>
+                  <tr>
+                    <th scope="col">All 7</th>
+                    <th scope="col">95% CI</th>
+                    <th scope="col">Original 6</th>
+                    <th scope="col">Photo board</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {summary.rows.map((r) => (
+                    <tr key={r.variant}>
+                      <th scope="row">{r.label}</th>
+                      <td className="mono">{rateText(r.all.falseArrivalRate)}</td>
+                      <td className="mono">{ciText(r.all.falseArrivalRate)}</td>
+                      <td className="mono">{rateText(r.original6.falseArrivalRate)}</td>
+                      <td className="mono">{rateText(r.postHoc.falseArrivalRate)}</td>
+                      <td className="mono">{rateText(r.all.completionRate)}</td>
+                      <td className="mono">{r.all.meanPathLength.toFixed(1)} m</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <ul>
+              <li>
+                The difference in false arrivals against the tuned single-frame baseline comes entirely from <code>photo-board-decoy</code>, added after
+                calibration v1 (see the chronology below). On the six original scenarios both have none.
+              </li>
+              <li>SureStop pays for re-observation in path length and frames; abstention (UNRESOLVED) did not occur on held-out seeds for any method.</li>
+              <li>Twenty seeds per scenario and method, our own decoys, one layout: the intervals are wide and the results are preliminary.</li>
+            </ul>
+          </section>
+
           <section id="changes">
-            <h2>Changes made after the first calibration run</h2>
+            <h2>Chronology and changes made after the first calibration run</h2>
+            <ol className={styles.chrono} aria-label="Development and experiment chronology, 19 October 2026 (UTC)">
+              {CHRONOLOGY.map((c) => (
+                <li key={c.what} data-kind={c.kind ?? "base"}>
+                  <span className={styles.chronoWhen}>{c.when}</span>
+                  <span className={styles.chronoWhat}>{c.what}</span>
+                  <span className={styles.chronoDetail}>{c.detail}</span>
+                </li>
+              ))}
+            </ol>
             <p>
               Calibration v1 (seeds 101–110, commit 2c5200c; summary in <code>docs/experiments/calibration-v1-summary.json</code>) was used for debugging as
               well as threshold selection. Three changes followed; the held-out evaluation seeds were not run until after them.

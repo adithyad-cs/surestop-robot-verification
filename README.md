@@ -27,7 +27,7 @@ Robot* track (Team Nexora4).
 | Baselines | Single-frame threshold (VLFM-style), temporal persistence (K of N frames), a single-view SureStop ablation |
 | Mission | Shared search route, candidate tracks, approach and stop, budgets, candidate-level and mission-level event log |
 | Evaluation | Ground-truth evaluator kept separate from the robot; mission metrics with numerators, denominators and Wilson 95 % intervals; CSV/JSON export |
-| UI | `/` entry, `/console` Mission Control, `/lab` Verification Lab, `/method` methodology |
+| UI | `/`: evidence poster from a recorded mission. `/console`: Mission Control with a frame scrubber and viewpoint roses. `/lab`: Verification Lab. `/method`: methodology, results, chronology. Design record in `docs/UI_DESIGN_BRIEF.md`, `docs/UI_RESEARCH.md` and `docs/VISUAL_QA.md` |
 
 ## The task and why this target
 
@@ -218,6 +218,10 @@ Notes:
   TF.js WASM. Other browsers or GPUs can give slightly different detector scores.
 
 Any single trial can be replayed in Mission Control: `/console?scenario=<id>&seed=<n>&method=<id>`.
+Four replays were checked against the records. Each reproduced the trajectory, every
+target-class observation, every candidate decision and the evaluator score. 2 of 92 detections
+of other classes differed in the fourth decimal, and the same happened with the build that
+produced the records.
 
 ## Deploy (Vercel)
 
@@ -248,7 +252,7 @@ src/eval/         evaluator, metrics, export
 src/experiments/  batch engine, seed protocol
 src/console/ src/lab/ src/app/   UI
 tests/unit/ tests/e2e/           Vitest and Playwright
-scripts/          feasibility, mission batches, aggregation, screenshots
+scripts/          feasibility, mission batches, merge/compare, aggregation, landing poster data, screenshots
 docs/             feasibility data, results
 ```
 

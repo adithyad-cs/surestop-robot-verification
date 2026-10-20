@@ -1,23 +1,29 @@
 :root {
   color-scheme: dark;
-  --bg: #0e1013;
-  --panel: #14171b;
-  --panel-2: #1a1e23;
-  --panel-3: #20252b;
-  --line: #262b31;
-  --line-strong: #353c44;
-  --text: #e7e9ec;
-  --muted: #9aa3ad;
-  --faint: #6b747e;
-  --cyan: #38bdf8;
-  --cyan-dim: rgba(56, 189, 248, 0.14);
-  --amber: #f5a524;
-  --amber-dim: rgba(245, 165, 36, 0.14);
-  --green: #34d399;
-  --green-dim: rgba(52, 211, 153, 0.14);
-  --red: #f87171;
-  --red-dim: rgba(248, 113, 113, 0.14);
-  --violet: #c4b5fd;
+  /* Graphite / mineral surfaces. Colour encodes meaning only (docs/UI_DESIGN_BRIEF.md §5). */
+  --bg: #0b0d10;
+  --panel: #111419;
+  --panel-2: #161a20;
+  --panel-3: #1c2128;
+  --line: #232830;
+  --line-strong: #323943;
+  --text: #e9ebee;
+  --muted: #a3abb5;
+  --faint: #7c858f;
+  --ice: #e6f3fa;
+  /* sensing and navigation */
+  --cyan: #4cc3f2;
+  --cyan-dim: rgba(76, 195, 242, 0.14);
+  /* model predictions and verification in progress */
+  --amber: #f2a93b;
+  --amber-dim: rgba(242, 169, 59, 0.14);
+  /* terminal outcomes only */
+  --green: #3ecf8e;
+  --green-dim: rgba(62, 207, 142, 0.14);
+  --red: #f47272;
+  --red-dim: rgba(244, 114, 114, 0.14);
+  /* verifier evidence labels */
+  --violet: #c3b6f7;
 
   --s1: 4px;
   --s2: 8px;
@@ -29,6 +35,12 @@
   --r-panel: 6px;
   --ctl-h: 32px;
   --header-h: 48px;
+
+  --s7: 48px;
+  --s8: 64px;
+  --t-fast: 120ms;
+  --t-med: 240ms;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
 
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, "SFMono-Regular", Menlo, monospace;
@@ -106,6 +118,7 @@ select {
 
 /* Shared control styles */
 .btn {
+  transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -132,14 +145,14 @@ select {
   cursor: not-allowed;
 }
 .btn-primary {
-  background: var(--cyan);
-  border-color: var(--cyan);
-  color: #04131c;
+  background: var(--ice);
+  border-color: var(--ice);
+  color: #0b1218;
   font-weight: 600;
 }
 .btn-primary:hover:not(:disabled) {
-  background: #7dd3fc;
-  border-color: #7dd3fc;
+  background: #ffffff;
+  border-color: #ffffff;
 }
 .btn-ghost {
   background: transparent;
@@ -153,7 +166,7 @@ select {
 }
 .field > label,
 .label {
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -180,7 +193,7 @@ select {
 
 .eyebrow {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 11.5px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--faint);
@@ -191,7 +204,7 @@ select {
   align-items: center;
   gap: 6px;
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 11.5px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted);
